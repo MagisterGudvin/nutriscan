@@ -23,15 +23,18 @@ jobs:
         run: |
           REPO=$(grep -E '^GITHUB_REPO' worker/wrangler.toml | sed -E 's/.*"([^"]+)".*/\1/')
           BRANCH=$(grep -E '^GITHUB_BRANCH' worker/wrangler.toml | sed -E 's/.*"([^"]+)".*/\1/')
+          AGENT=$(grep -E '^TIMEWEB_AGENT_ID' worker/wrangler.toml | sed -E 's/.*"([^"]+)".*/\1/')
           DATE=$(grep -E '^compatibility_date' worker/wrangler.toml | sed -E 's/.*"([^"]+)".*/\1/')
           echo "repo=$REPO" >> $GITHUB_OUTPUT
           echo "branch=$BRANCH" >> $GITHUB_OUTPUT
+          echo "agent=$AGENT" >> $GITHUB_OUTPUT
           echo "date=$DATE" >> $GITHUB_OUTPUT
 
       - name: Build metadata.json
         env:
           GH_REPO: ${{ steps.cfg.outputs.repo }}
           GH_BRANCH: ${{ steps.cfg.outputs.branch }}
+          TW_AGENT: ${{ steps.cfg.outputs.agent }}
           COMPAT_DATE: ${{ steps.cfg.outputs.date }}
           GH_DATA_TOKEN: ${{ secrets.GH_DATA_TOKEN }}
           TIMEWEB_TOKEN: ${{ secrets.TIMEWEB_TOKEN }}
@@ -40,16 +43,18 @@ jobs:
             --arg date "$COMPAT_DATE" \
             --arg ghrepo "$GH_REPO" \
             --arg ghbranch "$GH_BRANCH" \
+            --arg twagent "$TW_AGENT" \
             --arg ghtoken "$GH_DATA_TOKEN" \
             --arg twtoken "$TIMEWEB_TOKEN" \
             '{
               main_module: "worker.js",
               compatibility_date: $date,
               bindings: [
-                {type:"plain_text", name:"GITHUB_REPO",  text:$ghrepo},
-                {type:"plain_text", name:"GITHUB_BRANCH",text:$ghbranch},
-                {type:"secret_text",name:"GITHUB_TOKEN", text:$ghtoken},
-                {type:"secret_text",name:"TIMEWEB_TOKEN",text:$twtoken}
+                {type:"plain_text", name:"GITHUB_REPO",     text:$ghrepo},
+                {type:"plain_text", name:"GITHUB_BRANCH",   text:$ghbranch},
+                {type:"plain_text", name:"TIMEWEB_AGENT_ID",text:$twagent},
+                {type:"secret_text",name:"GITHUB_TOKEN",    text:$ghtoken},
+                {type:"secret_text",name:"TIMEWEB_TOKEN",   text:$twtoken}
               ]
             }' > metadata.json
 

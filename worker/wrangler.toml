@@ -7,6 +7,7 @@ compatibility_date = "2024-12-01"
 [vars]
 GITHUB_REPO = "MagisterGudvin/nutri-data"
 GITHUB_BRANCH = "main"
+TIMEWEB_AGENT_ID = "d43b70f8-5d42-476b-9de3-1ccdeac62b78"
 
 # Секреты (задаются через `wrangler secret put` или GitHub Actions):
 #   wrangler secret put TIMEWEB_TOKEN

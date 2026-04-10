@@ -85,26 +85,28 @@ async function handleAnalyze(request, env) {
 
   const prompt = buildAnalysisPrompt(body);
 
-  const response = await fetch('https://api.timeweb.cloud/v2/ai/agent', {
+  const agentId = env.TIMEWEB_AGENT_ID;
+  if (!agentId) {
+    return jsonResponse({ error: 'TIMEWEB_AGENT_ID not configured' }, 500);
+  }
+
+  const endpoint = `https://agent.timeweb.cloud/api/v1/cloud-ai/agents/${agentId}/v1/chat/completions`;
+
+  const response = await fetch(endpoint, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${env.TIMEWEB_TOKEN}`
     },
     body: JSON.stringify({
-      model: 'gemma-3-12b-it',
       messages: [
-        {
-          role: 'system',
-          content: 'Ты диетолог-нутрициолог. Анализируй рацион питания студента. Используй базу знаний (загруженные книги и справочники) для определения КБЖУ продуктов. Отвечай строго в JSON формате без markdown. Формат ответа: {"totals":{"calories":число,"protein":число,"fat":число,"carbs":число},"deficits":["строка"],"imbalances":["строка"],"recommendations":["строка"],"sources":[{"product":"название продукта","value":"КБЖУ значение","source":"название книги/справочника","detail":"таблица, страница или раздел откуда взяты данные"}]}'
-        },
         {
           role: 'user',
           content: prompt
         }
       ],
       temperature: 0.3,
-      max_tokens: 2000
+      max_tokens: 4000
     })
   });
 
