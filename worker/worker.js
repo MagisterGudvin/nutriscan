@@ -275,10 +275,12 @@ async function getGithubFile(env, path) {
   const resp = await githubRequest(env, path, 'GET');
   if (!resp.ok) return null;
   const data = await resp.json();
-  return {
-    content: atob(data.content.replace(/\n/g, '')),
-    sha: data.sha
-  };
+  // base64 → UTF-8 (атоб даёт latin-1 binary string, нужно перекодировать в UTF-8)
+  const binary = atob(data.content.replace(/\n/g, ''));
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  const content = new TextDecoder('utf-8').decode(bytes);
+  return { content, sha: data.sha };
 }
 
 async function putGithubFile(env, path, content, message) {
