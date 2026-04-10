@@ -1,0 +1,16 @@
+name = "nutri-worker"
+main = "worker.js"
+compatibility_date = "2024-12-01"
+
+# Публичные переменные. Поменяйте на ваш репозиторий, в котором будут лежать
+# data/users.json, data/reports.json, data/products_override.json и books/*.md
+[vars]
+GITHUB_REPO = "your-username/nutri-data"
+GITHUB_BRANCH = "main"
+
+# Секреты (задаются через `wrangler secret put` или GitHub Actions):
+#   wrangler secret put TIMEWEB_TOKEN
+#   wrangler secret put GITHUB_TOKEN
+#
+# TIMEWEB_TOKEN — Bearer-токен Timeweb AI Agent
+# GITHUB_TOKEN  — fine-grained PAT с правами Contents:RW на репозиторий с данными

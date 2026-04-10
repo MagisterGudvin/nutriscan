@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#22c55e">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>NutriCheck — Анализ питания</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- Auth Screen -->
+  <div id="auth-screen" class="auth-screen hidden"></div>
+
+  <!-- App Shell -->
+  <div id="app-shell" class="app-container hidden">
+
+    <!-- Top Header -->
+    <header class="top-header" id="top-header">
+      <div>
+        <div class="top-header__title">NutriCheck</div>
+      </div>
+    </header>
+
+    <!-- Pages -->
+    <main class="main-content">
+      <!-- Student pages -->
+      <div class="page" id="page-home"></div>
+      <div class="page" id="page-day"></div>
+      <div class="page" id="page-week"></div>
+      <div class="page" id="page-reports"></div>
+      <div class="page" id="page-profile"></div>
+
+      <!-- Teacher pages -->
+      <div class="page" id="page-students"></div>
+      <div class="page" id="page-student-detail"></div>
+      <div class="page" id="page-products"></div>
+      <div class="page" id="page-books"></div>
+      <div class="page" id="page-export"></div>
+    </main>
+
+    <!-- FAB -->
+    <button class="fab hidden" id="fab">+</button>
+
+    <!-- Bottom Navigation -->
+    <nav class="bottom-nav" id="bottom-nav"></nav>
+  </div>
+
+  <!-- Toast Container -->
+  <div class="toast-container"></div>
+
+  <!-- Scripts (order matters: dependencies first) -->
+  <script src="js/config.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/storage.js"></script>
+  <script src="js/analysis.js"></script>
+  <script src="js/database.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/docx.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/app.js"></script>
+
+</body>
+</html>

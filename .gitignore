@@ -1,0 +1,23 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/
+*.swp
+
+# Node / wrangler
+node_modules/
+worker/.wrangler/
+worker/node_modules/
+worker/.dev.vars
+
+# Build
+_site/
+
+# Local Claude Code
+.claude/
+
+# Local data dumps
+*.local.json
