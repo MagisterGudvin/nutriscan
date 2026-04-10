@@ -208,13 +208,14 @@ function adaptAgentResponse(p) {
         sum.omega3   += num(item.omega3);
         sum.omega6   += num(item.omega6);
         if (item.product) {
-          let src = item.source || 'Оценка преподавателя';
-          if (/^оценка$/i.test(src.trim())) src = 'Оценка преподавателя';
+          let rawSrc = item.source || 'Оценка преподавателя';
+          if (/^оценка$/i.test(String(rawSrc).trim())) rawSrc = 'Оценка преподавателя';
+          const sd = splitSourceDetail(rawSrc, item.detail);
           out.sources.push({
             product: item.product,
             value: `${num(item.calories)} ккал, Б${num(item.protein)} Ж${num(item.fat)} У${num(item.carbs)}`,
-            source: src,
-            detail: item.detail || ''
+            source: sd.source,
+            detail: sd.detail
           });
         }
       }
@@ -229,17 +230,34 @@ function adaptAgentResponse(p) {
     }
   }
 
-  // 3) Если агент сам отдал sources — берём их (с нормализацией "Оценка")
+  // 3) Если агент сам отдал sources — берём их (с нормализацией "Оценка" и сплитом source/detail)
   if (Array.isArray(p.sources) && p.sources.length) {
     out.sources = p.sources.map(function(s) {
       if (!s || typeof s !== 'object') return s;
       var src = s.source || '';
       if (/^оценка$/i.test(String(src).trim())) src = 'Оценка преподавателя';
-      return Object.assign({}, s, { source: src });
+      var sd = splitSourceDetail(src, s.detail);
+      return Object.assign({}, s, { source: sd.source, detail: sd.detail });
     });
   }
 
   return out;
+}
+
+/* Если агент кладёт source одной строкой типа
+   "Скурихин, табл. 6.6.4 (ЗЕРНО..., стр. 148)" — разделяем на
+   source ("Скурихин") и detail ("табл. 6.6.4 (ЗЕРНО..., стр. 148)"). */
+function splitSourceDetail(rawSource, rawDetail) {
+  let source = String(rawSource || '').trim();
+  let detail = String(rawDetail || '').trim();
+  if (!source) return { source, detail };
+  if (detail) return { source, detail };
+
+  const m = source.match(/^(.*?)[,;:\s]+((?:табл|стр|раздел|глав|разд\.|табл\.|стр\.)[^\n]*)$/i);
+  if (m) {
+    return { source: m[1].trim().replace(/[,;:]+$/, ''), detail: m[2].trim() };
+  }
+  return { source, detail };
 }
 
 function num(v) {
@@ -260,11 +278,11 @@ function buildSystemPrompt() {
     '   по подключённой базе знаний (книги по химическому составу пищевых продуктов,',
     '   справочники Скурихина и т. п.) и взять КБЖУ оттуда.',
     '2. Запрещено выдумывать или брать значения из общих знаний модели — только KB.',
-    '3. В поле "source" всегда указывай конкретное название книги/справочника, найденное',
-    '   в базе знаний (например: "Химический состав российских пищевых продуктов, под ред.',
-    '   И. М. Скурихина").',
-    '4. В поле "detail" указывай конкретный фрагмент: номер таблицы, страница, раздел —',
-    '   именно так, как это указано в найденном куске базы знаний.',
+    '3. В поле "source" указывай ТОЛЬКО название книги/справочника без номеров таблиц,',
+    '   страниц или разделов. Пример: "Химический состав российских пищевых продуктов,',
+    '   под ред. И. М. Скурихина" — и больше ничего в этой строке.',
+    '4. В поле "detail" указывай ТОЛЬКО локализацию внутри книги: "табл. 6.6.4, стр. 148",',
+    '   "раздел 3.2", "глава 5" и т. п. Не дублируй сюда название книги.',
     '5. Если конкретного продукта в базе знаний нет, ищи ближайший аналог и в "detail"',
     '   честно укажи "аналог: <название найденного продукта>".',
     '6. Если в запросе передан "Справочник продуктов преподавателя" — для совпавших',
