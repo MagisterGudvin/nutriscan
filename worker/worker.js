@@ -106,7 +106,7 @@ async function handleAnalyze(request, env) {
         }
       ],
       temperature: 0.3,
-      max_tokens: 4000
+      max_tokens: 8000
     })
   });
 
@@ -126,21 +126,20 @@ async function handleAnalyze(request, env) {
     content = result;
   }
 
-  // Parse JSON from response
+  // Strip markdown code blocks if present
+  content = content.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+
+  let parsed = null;
   try {
-    // Strip markdown code blocks if present
-    content = content.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
-    const parsed = JSON.parse(content);
-    return jsonResponse(parsed);
+    parsed = JSON.parse(content);
   } catch (e) {
-    // Try to extract JSON from text
     const match = content.match(/\{[\s\S]*\}/);
     if (match) {
-      try {
-        const parsed = JSON.parse(match[0]);
-        return jsonResponse(parsed);
-      } catch (e2) {}
+      try { parsed = JSON.parse(match[0]); } catch (e2) {}
     }
+  }
+
+  if (!parsed) {
     return jsonResponse({
       totals: { calories: 0, protein: 0, fat: 0, carbs: 0 },
       deficits: [],
@@ -150,7 +149,82 @@ async function handleAnalyze(request, env) {
       raw: content
     });
   }
+
+  return jsonResponse(adaptAgentResponse(parsed));
 }
+
+/* Адаптирует ответ Timeweb-агента к схеме фронта.
+   Агент может вернуть либо плоский { totals, deficits, ... },
+   либо детальный { meals: { breakfast:[{product, calories, ...}], ... }, totals, ... } */
+function adaptAgentResponse(p) {
+  const out = {
+    totals: { calories: 0, protein: 0, fat: 0, carbs: 0 },
+    deficits: Array.isArray(p.deficits) ? p.deficits : [],
+    imbalances: Array.isArray(p.imbalances) ? p.imbalances : [],
+    recommendations: Array.isArray(p.recommendations) ? p.recommendations : [],
+    sources: []
+  };
+
+  // 1) Если агент уже отдал готовые totals — используем их
+  if (p.totals && typeof p.totals === 'object') {
+    out.totals.calories = num(p.totals.calories);
+    out.totals.protein  = num(p.totals.protein);
+    out.totals.fat      = num(p.totals.fat);
+    out.totals.carbs    = num(p.totals.carbs);
+    if (p.totals.omega3 != null) out.totals.omega3 = num(p.totals.omega3);
+    if (p.totals.omega6 != null) out.totals.omega6 = num(p.totals.omega6);
+  }
+
+  // 2) Если есть детализация по блюдам — суммируем + собираем sources
+  if (p.meals && typeof p.meals === 'object' && !Array.isArray(p.meals)) {
+    let sum = { calories: 0, protein: 0, fat: 0, carbs: 0, omega3: 0, omega6: 0 };
+    let any = false;
+    for (const meal of Object.values(p.meals)) {
+      if (!Array.isArray(meal)) continue;
+      for (const item of meal) {
+        if (!item || typeof item !== 'object') continue;
+        any = true;
+        sum.calories += num(item.calories);
+        sum.protein  += num(item.protein);
+        sum.fat      += num(item.fat);
+        sum.carbs    += num(item.carbs);
+        sum.omega3   += num(item.omega3);
+        sum.omega6   += num(item.omega6);
+        if (item.product) {
+          out.sources.push({
+            product: item.product,
+            value: `${num(item.calories)} ккал, Б${num(item.protein)} Ж${num(item.fat)} У${num(item.carbs)}`,
+            source: item.source || 'Агент Timeweb',
+            detail: item.detail || ''
+          });
+        }
+      }
+    }
+    if (any && (!p.totals || !num(p.totals.calories))) {
+      out.totals.calories = round(sum.calories);
+      out.totals.protein  = round(sum.protein);
+      out.totals.fat      = round(sum.fat);
+      out.totals.carbs    = round(sum.carbs);
+      out.totals.omega3   = round1(sum.omega3);
+      out.totals.omega6   = round1(sum.omega6);
+    }
+  }
+
+  // 3) Если агент сам отдал sources — берём их
+  if (Array.isArray(p.sources) && p.sources.length) {
+    out.sources = p.sources;
+  }
+
+  return out;
+}
+
+function num(v) {
+  const n = parseFloat(v);
+  return isFinite(n) ? n : 0;
+}
+function round(v) { return Math.round(v); }
+function round1(v) { return Math.round(v * 10) / 10; }
+
 
 function buildAnalysisPrompt(body) {
   let prompt = 'Проанализируй рацион питания за день:\n\n';
