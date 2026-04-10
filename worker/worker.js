@@ -191,10 +191,12 @@ function adaptAgentResponse(p) {
         sum.omega3   += num(item.omega3);
         sum.omega6   += num(item.omega6);
         if (item.product) {
+          let src = item.source || 'Оценка преподавателя';
+          if (/^оценка$/i.test(src.trim())) src = 'Оценка преподавателя';
           out.sources.push({
             product: item.product,
             value: `${num(item.calories)} ккал, Б${num(item.protein)} Ж${num(item.fat)} У${num(item.carbs)}`,
-            source: item.source || 'Агент Timeweb',
+            source: src,
             detail: item.detail || ''
           });
         }
@@ -210,9 +212,14 @@ function adaptAgentResponse(p) {
     }
   }
 
-  // 3) Если агент сам отдал sources — берём их
+  // 3) Если агент сам отдал sources — берём их (с нормализацией "Оценка")
   if (Array.isArray(p.sources) && p.sources.length) {
-    out.sources = p.sources;
+    out.sources = p.sources.map(function(s) {
+      if (!s || typeof s !== 'object') return s;
+      var src = s.source || '';
+      if (/^оценка$/i.test(String(src).trim())) src = 'Оценка преподавателя';
+      return Object.assign({}, s, { source: src });
+    });
   }
 
   return out;
