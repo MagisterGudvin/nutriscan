@@ -151,11 +151,7 @@ async function handleAnalyze(request, env) {
         { role: 'user', content: prompt }
       ],
       temperature: 0.2,
-      max_tokens: 2500,
-      // Подсказки для reasoning-моделей (Grok 4.1 Fast Reasoning и т. п.).
-      // Если бэкенд параметр игнорирует — никакого вреда.
-      reasoning_effort: 'low',
-      reasoning: { effort: 'low' }
+      max_tokens: 3000
     })
   });
 
@@ -175,18 +171,7 @@ async function handleAnalyze(request, env) {
     content = result;
   }
 
-  // Strip markdown code blocks if present
-  content = content.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
-
-  let parsed = null;
-  try {
-    parsed = JSON.parse(content);
-  } catch (e) {
-    const match = content.match(/\{[\s\S]*\}/);
-    if (match) {
-      try { parsed = JSON.parse(match[0]); } catch (e2) {}
-    }
-  }
+  const parsed = extractJson(content);
 
   if (!parsed) {
     return jsonResponse({
@@ -195,7 +180,7 @@ async function handleAnalyze(request, env) {
       imbalances: [],
       recommendations: ['Не удалось проанализировать рацион. Попробуйте описать блюда подробнее.'],
       sources: [],
-      raw: content
+      raw: (content || '').slice(0, 4000)
     });
   }
 
@@ -294,6 +279,51 @@ function adaptAgentResponse(p) {
   return out;
 }
 
+/* Несколько попыток вытащить JSON из ответа модели:
+   1) очистить markdown-обёртки и попробовать JSON.parse целиком,
+   2) вырезать первый сбалансированный {...} (учитывая вложенность и строки),
+   3) жадный regex {[\s\S]*}. */
+function extractJson(raw) {
+  if (!raw) return null;
+  let s = String(raw).trim();
+  s = s.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
+
+  try { return JSON.parse(s); } catch (e) {}
+
+  const balanced = sliceFirstJsonObject(s);
+  if (balanced) {
+    try { return JSON.parse(balanced); } catch (e) {}
+  }
+
+  const greedy = s.match(/\{[\s\S]*\}/);
+  if (greedy) {
+    try { return JSON.parse(greedy[0]); } catch (e) {}
+  }
+  return null;
+}
+
+function sliceFirstJsonObject(s) {
+  const start = s.indexOf('{');
+  if (start === -1) return null;
+  let depth = 0, inStr = false, esc = false;
+  for (let i = start; i < s.length; i++) {
+    const ch = s[i];
+    if (inStr) {
+      if (esc) { esc = false; continue; }
+      if (ch === '\\') { esc = true; continue; }
+      if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') { inStr = true; continue; }
+    if (ch === '{') depth++;
+    else if (ch === '}') {
+      depth--;
+      if (depth === 0) return s.slice(start, i + 1);
+    }
+  }
+  return null;
+}
+
 /* Если агент кладёт source одной строкой типа
    "Скурихин, табл. 6.6.4 (ЗЕРНО..., стр. 148)" — разделяем на
    source ("Скурихин") и detail ("табл. 6.6.4 (ЗЕРНО..., стр. 148)"). */
@@ -319,9 +349,39 @@ function round1(v) { return Math.round(v * 10) / 10; }
 
 
 function buildSystemPrompt() {
-  // Полная инструкция должна быть задана в самом агенте Timeweb (dashboard).
-  // Здесь оставляем короткое напоминание — это резко уменьшает время ответа.
-  return 'Ты — нутрициолог-аналитик NutriCheck. Используй подключённую базу знаний (Скурихин) и приоритетный справочник преподавателя из user-сообщения. Возвращай ТОЛЬКО один JSON-объект по схеме из настроек агента, без markdown и без текста вокруг. source = только название книги, detail = только таблица/страница.';
+  // Самодостаточная инструкция со схемой — чтобы не зависеть от того, что
+  // прописано в dashboard агента. Без неё не-reasoning модели возвращают
+  // пустой/невалидный JSON и фронт получает нули.
+  return [
+    'Ты — нутрициолог-аналитик NutriCheck. Анализируй дневной рацион студента.',
+    '',
+    'Источники данных по приоритету:',
+    '1) "Справочник преподавателя" из user-сообщения (если совпал — берёшь оттуда).',
+    '2) Подключённая база знаний (Скурихин и аналоги).',
+    '3) Только если нигде нет — оценка по своим знаниям, source="Оценка ИИ".',
+    '',
+    'source = ТОЛЬКО название книги. detail = ТОЛЬКО таблица/страница/раздел.',
+    '',
+    'Возвращай СТРОГО один JSON-объект, без markdown, без ```json, без текста вокруг.',
+    'Все числа — числа (не строки). Все тексты — на русском.',
+    '',
+    'Схема ответа:',
+    '{',
+    '  "meals": {',
+    '    "breakfast": [ {"product":"...","portion_g":0,"calories":0,"protein":0,"fat":0,"carbs":0,"omega3":0,"omega6":0,"source":"Скурихин","detail":"табл. X, стр. Y"} ],',
+    '    "lunch":  [],',
+    '    "snack":  [],',
+    '    "dinner": []',
+    '  },',
+    '  "totals": {"calories":0,"protein":0,"fat":0,"carbs":0,"omega3":0,"omega6":0},',
+    '  "deficits":        ["..."],',
+    '  "imbalances":      ["..."],',
+    '  "recommendations": ["...","...","..."]',
+    '}',
+    '',
+    'Если приём пищи не указан в рационе — верни для него []. Не выдумывай блюда.',
+    'Никаких лишних полей сверх схемы (никаких amino_acids, vitamins, norms).'
+  ].join('\n');
 }
 
 function buildAnalysisPrompt(body) {
