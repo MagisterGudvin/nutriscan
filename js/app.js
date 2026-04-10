@@ -620,9 +620,10 @@ var NutriApp = (function() {
       });
     });
 
-    // Swipe (горизонтальный) для смены недели
+    // Свайп / drag / колесо / стрелки для смены недели
     var scroll = $('#week-scroll');
     if (scroll) {
+      // --- Touch swipe ---
       var sx = 0, sy = 0, moved = false;
       scroll.addEventListener('touchstart', function(e) {
         if (!e.touches || !e.touches[0]) return;
@@ -644,6 +645,70 @@ var NutriApp = (function() {
         else weekStart = shiftDate(weekStart, -7);
         renderWeekPage();
       });
+
+      // --- Mouse drag (PC) ---
+      var isDown = false, mouseStartX = 0, scrollStartLeft = 0, dragDist = 0, dragged = false;
+      scroll.addEventListener('mousedown', function(e) {
+        isDown = true;
+        dragged = false;
+        dragDist = 0;
+        mouseStartX = e.pageX;
+        scrollStartLeft = scroll.scrollLeft;
+        scroll.classList.add('dragging');
+      });
+      window.addEventListener('mouseup', function(e) {
+        if (!isDown) return;
+        isDown = false;
+        scroll.classList.remove('dragging');
+        // Если «свайпнули» мышью больше чем на 80px — меняем неделю
+        if (Math.abs(dragDist) > 80) {
+          if (dragDist < 0) weekStart = shiftDate(weekStart, 7);
+          else weekStart = shiftDate(weekStart, -7);
+          renderWeekPage();
+        }
+      });
+      scroll.addEventListener('mousemove', function(e) {
+        if (!isDown) return;
+        e.preventDefault();
+        var dx = e.pageX - mouseStartX;
+        dragDist = dx;
+        if (Math.abs(dx) > 5) dragged = true;
+        scroll.scrollLeft = scrollStartLeft - dx;
+      });
+      // Подавить клик по карточке, если был drag
+      scroll.addEventListener('click', function(e) {
+        if (dragged) {
+          e.stopPropagation();
+          e.preventDefault();
+          dragged = false;
+        }
+      }, true);
+
+      // --- Wheel: вертикальное колесо -> горизонтальная прокрутка ---
+      scroll.addEventListener('wheel', function(e) {
+        if (e.deltaY === 0) return;
+        // Если горизонтальное колесо уже что-то даёт — не мешаем
+        if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+        e.preventDefault();
+        scroll.scrollLeft += e.deltaY;
+      }, { passive: false });
+
+      // --- Клавиатура: стрелки влево/вправо для смены недели ---
+      if (!window.__nutriWeekKeys) {
+        window.__nutriWeekKeys = true;
+        document.addEventListener('keydown', function(e) {
+          if (currentPage !== 'week') return;
+          var tag = (e.target && e.target.tagName) || '';
+          if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+          if (e.key === 'ArrowLeft') {
+            weekStart = shiftDate(weekStart, -7);
+            renderWeekPage();
+          } else if (e.key === 'ArrowRight') {
+            weekStart = shiftDate(weekStart, 7);
+            renderWeekPage();
+          }
+        });
+      }
     }
   }
 

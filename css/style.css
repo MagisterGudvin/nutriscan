@@ -653,6 +653,17 @@ img { max-width: 100%; display: block; }
   padding: var(--s-2) 0;
   scrollbar-width: none;
   touch-action: pan-x;
+  cursor: grab;
+  user-select: none;
+}
+
+.week-scroll.dragging {
+  cursor: grabbing;
+  scroll-snap-type: none;
+}
+
+.week-scroll.dragging .week-day-card {
+  pointer-events: none;
 }
 
 .week-scroll::-webkit-scrollbar { display: none; }
