@@ -80,8 +80,53 @@ export default {
 };
 
 /* ---- Analyze (proxy to Timeweb AI Agent) ---- */
+// In-memory кэш ответов агента (живёт пока isolate worker'а активен)
+const ANALYZE_CACHE = new Map();
+const ANALYZE_CACHE_TTL_MS = 60 * 60 * 1000; // 1 час
+const ANALYZE_CACHE_MAX = 200;
+
+function analyzeCacheKey(body) {
+  const m = body.meals || {};
+  const n = body.norms || {};
+  // Не включаем справочник преподавателя в ключ — обычно стабилен,
+  // и его изменение всё равно даст другой ответ только при совпадении блюд.
+  return JSON.stringify({
+    b: (m.breakfast || '').trim().toLowerCase(),
+    l: (m.lunch || '').trim().toLowerCase(),
+    s: (m.snack || '').trim().toLowerCase(),
+    d: (m.dinner || '').trim().toLowerCase(),
+    n: { c: n.calories|0, p: n.protein|0, f: n.fat|0, ch: n.carbs|0 }
+  });
+}
+
+function getCached(key) {
+  const hit = ANALYZE_CACHE.get(key);
+  if (!hit) return null;
+  if (Date.now() - hit.t > ANALYZE_CACHE_TTL_MS) {
+    ANALYZE_CACHE.delete(key);
+    return null;
+  }
+  return hit.v;
+}
+
+function setCached(key, value) {
+  if (ANALYZE_CACHE.size >= ANALYZE_CACHE_MAX) {
+    // Простой LRU-подобный сброс: удаляем самую старую запись
+    const firstKey = ANALYZE_CACHE.keys().next().value;
+    if (firstKey) ANALYZE_CACHE.delete(firstKey);
+  }
+  ANALYZE_CACHE.set(key, { t: Date.now(), v: value });
+}
+
 async function handleAnalyze(request, env) {
   const body = await request.json();
+
+  // Cache lookup
+  const cacheKey = analyzeCacheKey(body);
+  const cached = getCached(cacheKey);
+  if (cached) {
+    return jsonResponse(Object.assign({}, cached, { _cached: true }));
+  }
 
   const prompt = buildAnalysisPrompt(body);
 
@@ -106,7 +151,7 @@ async function handleAnalyze(request, env) {
         { role: 'user', content: prompt }
       ],
       temperature: 0.2,
-      max_tokens: 8000
+      max_tokens: 2500
     })
   });
 
@@ -167,6 +212,7 @@ async function handleAnalyze(request, env) {
       return s;
     });
   }
+  setCached(cacheKey, adapted);
   return jsonResponse(adapted);
 }
 
@@ -269,90 +315,38 @@ function round1(v) { return Math.round(v * 10) / 10; }
 
 
 function buildSystemPrompt() {
-  return [
-    'Ты — нутрициолог-аналитик NutriCheck. Твоя задача — оценить рацион студента по КБЖУ',
-    'на основе ТОЛЬКО данных из подключённой к тебе базы знаний (Knowledge Base / RAG).',
-    '',
-    'ПРАВИЛА РАБОТЫ С БАЗОЙ ЗНАНИЙ:',
-    '1. Для каждого продукта, который встречается в рационе, ты ОБЯЗАН выполнить поиск',
-    '   по подключённой базе знаний (книги по химическому составу пищевых продуктов,',
-    '   справочники Скурихина и т. п.) и взять КБЖУ оттуда.',
-    '2. Запрещено выдумывать или брать значения из общих знаний модели — только KB.',
-    '3. В поле "source" указывай ТОЛЬКО название книги/справочника без номеров таблиц,',
-    '   страниц или разделов. Пример: "Химический состав российских пищевых продуктов,',
-    '   под ред. И. М. Скурихина" — и больше ничего в этой строке.',
-    '4. В поле "detail" указывай ТОЛЬКО локализацию внутри книги: "табл. 6.6.4, стр. 148",',
-    '   "раздел 3.2", "глава 5" и т. п. Не дублируй сюда название книги.',
-    '5. Если конкретного продукта в базе знаний нет, ищи ближайший аналог и в "detail"',
-    '   честно укажи "аналог: <название найденного продукта>".',
-    '6. Если в запросе передан "Справочник продуктов преподавателя" — для совпавших',
-    '   позиций ОБЯЗАТЕЛЬНО используй source/detail именно оттуда, они приоритетнее.',
-    '',
-    'ФОРМАТ ОТВЕТА: строго один JSON-объект, без какого-либо текста вокруг,',
-    'без markdown-обёрток ```json. Структура:',
-    '{',
-    '  "totals": {"calories": число, "protein": число, "fat": число, "carbs": число},',
-    '  "deficits": ["строка", ...],',
-    '  "imbalances": ["строка", ...],',
-    '  "recommendations": ["строка", ...],',
-    '  "sources": [',
-    '    {"product": "название", "value": "X ккал, БY ЖZ УW",',
-    '     "source": "название книги из KB", "detail": "таблица N, стр. M"}',
-    '  ]',
-    '}',
-    '',
-    'Все числа — целые или с одним знаком после точки. Никаких комментариев в JSON.',
-    'Все тексты — на русском языке.'
-  ].join('\n');
+  // Полная инструкция должна быть задана в самом агенте Timeweb (dashboard).
+  // Здесь оставляем короткое напоминание — это резко уменьшает время ответа.
+  return 'Ты — нутрициолог-аналитик NutriCheck. Используй подключённую базу знаний (Скурихин) и приоритетный справочник преподавателя из user-сообщения. Возвращай ТОЛЬКО один JSON-объект по схеме из настроек агента, без markdown и без текста вокруг. source = только название книги, detail = только таблица/страница.';
 }
 
 function buildAnalysisPrompt(body) {
-  let prompt = '';
-  prompt += 'Проанализируй рацион студента за один день. Для каждого продукта НАЙДИ КБЖУ\n';
-  prompt += 'в подключённой базе знаний (книги по составу пищевых продуктов) и используй\n';
-  prompt += 'найденные значения. В поле "source" верни название книги, в "detail" — номер\n';
-  prompt += 'таблицы и страницу из найденного фрагмента.\n\n';
+  const m = body.meals || {};
+  const n = body.norms || {};
 
-  prompt += '=== РАЦИОН ===\n';
-  if (body.meals) {
-    if (body.meals.breakfast) prompt += `Завтрак: ${body.meals.breakfast}\n`;
-    if (body.meals.lunch)     prompt += `Обед: ${body.meals.lunch}\n`;
-    if (body.meals.snack)     prompt += `Полдник: ${body.meals.snack}\n`;
-    if (body.meals.dinner)    prompt += `Ужин: ${body.meals.dinner}\n`;
+  let prompt = 'РАЦИОН:\n';
+  if (m.breakfast) prompt += `Завтрак: ${m.breakfast}\n`;
+  if (m.lunch)     prompt += `Обед: ${m.lunch}\n`;
+  if (m.snack)     prompt += `Полдник: ${m.snack}\n`;
+  if (m.dinner)    prompt += `Ужин: ${m.dinner}\n`;
+
+  if (n.calories) {
+    prompt += `\nНОРМЫ: ${n.calories} ккал, Б${n.protein} Ж${n.fat} У${n.carbs}`;
+    if (n.omega3 != null) prompt += `, Ω3≥${n.omega3}`;
+    if (n.omega6 != null) prompt += `, Ω6≤${n.omega6}`;
+    prompt += '\n';
   }
 
-  if (body.norms) {
-    prompt += '\n=== ИНДИВИДУАЛЬНЫЕ НОРМЫ СТУДЕНТА ===\n';
-    prompt += `Калории: ${body.norms.calories} ккал/сутки\n`;
-    prompt += `Белок:   ${body.norms.protein} г\n`;
-    prompt += `Жиры:    ${body.norms.fat} г\n`;
-    prompt += `Углеводы: ${body.norms.carbs} г\n`;
-    if (body.norms.omega3 != null) prompt += `Омега-3: ${body.norms.omega3} г (минимум)\n`;
-    if (body.norms.omega6 != null) prompt += `Омега-6: ${body.norms.omega6} г (максимум)\n`;
-  }
-
-  if (body.products && body.products.length) {
-    prompt += '\n=== СПРАВОЧНИК ПРОДУКТОВ ПРЕПОДАВАТЕЛЯ ===\n';
-    prompt += '(значения на 100 г, ПРИОРИТЕТНЫЙ источник — для совпавших позиций используй именно эти source/detail)\n';
-    body.products.slice(0, 50).forEach(p => {
-      let line = `- ${p.name}: ${p.calories} ккал, Б${p.protein} Ж${p.fat} У${p.carbs}`;
-      if (p.source) line += ` [источник: ${p.source}${p.detail ? ', ' + p.detail : ''}]`;
+  if (Array.isArray(body.products) && body.products.length) {
+    prompt += '\nСПРАВОЧНИК ПРЕПОДАВАТЕЛЯ (приоритет, на 100 г):\n';
+    body.products.slice(0, 25).forEach(p => {
+      let line = `- ${p.name}: ${p.calories}/${p.protein}/${p.fat}/${p.carbs}`;
+      if (p.source) line += ` [${p.source}${p.detail ? ', ' + p.detail : ''}]`;
       prompt += line + '\n';
     });
   }
 
-  prompt += '\n=== ЗАДАЧА ===\n';
-  prompt += '1. Для КАЖДОГО продукта из рациона выполни поиск в подключённой базе знаний.\n';
-  prompt += '   Возьми КБЖУ из найденного фрагмента и зафиксируй название книги + таблицу/страницу.\n';
-  prompt += '2. Рассчитай суммарные КБЖУ за день (поле totals).\n';
-  prompt += '3. Сравни с нормами и выпиши:\n';
-  prompt += '   - deficits: чего не хватает (с указанием численного дефицита),\n';
-  prompt += '   - imbalances: дисбаланс БЖУ или микронутриентов,\n';
-  prompt += '   - recommendations: 3–5 конкретных, выполнимых рекомендаций именно под этот рацион.\n';
-  prompt += '4. Заполни массив sources: по одной записи на каждый ключевой продукт рациона.\n';
-  prompt += '   Никаких "общих знаний" — только то, что нашлось в базе знаний или в справочнике преподавателя.\n\n';
-  prompt += 'Верни ответ строго в формате JSON, описанном в системной инструкции. Без обёрток, без пояснений.';
-
+  prompt += '\nВерни JSON по схеме из системной инструкции. Никакого текста вокруг.';
   return prompt;
 }
 
