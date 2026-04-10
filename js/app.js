@@ -542,18 +542,10 @@ var NutriApp = (function() {
     var user = NutriAuth.currentUser();
     var reports = NutriDB.getStudentReports(user.id);
 
-    // Неделя теперь «скользящая»: сегодня (или выбранный день) находится
-    // в центре окна из 7 дней: 3 дня до + текущий + 3 дня после.
-    if (!weekStart) weekStart = shiftDate(selectedDate || UI.todayStr(), -3);
+    if (!weekStart) weekStart = mondayOf(selectedDate);
     var weekDates = [];
     for (var k = 0; k < 7; k++) weekDates.push(shiftDate(weekStart, k));
-    // Подписи Пн/Вт/... считаем динамически по реальному дню недели каждой даты
-    var dayShort = ['Вс','Пн','Вт','Ср','Чт','Пт','Сб'];
-    var names = weekDates.map(function(ds) {
-      var p = ds.split('-');
-      var d = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]));
-      return dayShort[d.getDay()];
-    });
+    var names = UI.dayNames();
 
     updateHeader('Неделя', UI.formatDate(weekDates[0]) + ' — ' + UI.formatDate(weekDates[6]));
 
@@ -629,8 +621,8 @@ var NutriApp = (function() {
       renderWeekPage();
     });
     $('#week-today').addEventListener('click', function() {
+      weekStart = mondayOf(UI.todayStr());
       selectedDate = UI.todayStr();
-      weekStart = shiftDate(selectedDate, -3);
       renderWeekPage();
     });
 
