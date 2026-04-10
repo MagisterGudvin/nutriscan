@@ -11,6 +11,20 @@ var NutriApp = (function() {
   var currentPage = '';
   var selectedDate = UI.todayStr();
   var selectedStudentId = null;
+  var weekStart = null; // Понедельник отображаемой недели, независимо от selectedDate
+
+  function mondayOf(dateStr) {
+    var d = new Date(dateStr + 'T00:00:00');
+    var dow = d.getDay();
+    d.setDate(d.getDate() - ((dow + 6) % 7));
+    return d.toISOString().slice(0, 10);
+  }
+
+  function shiftDate(dateStr, days) {
+    var d = new Date(dateStr + 'T00:00:00');
+    d.setDate(d.getDate() + days);
+    return d.toISOString().slice(0, 10);
+  }
 
   /* ---- Router ---- */
   function navigate(hash) {
@@ -381,8 +395,8 @@ var NutriApp = (function() {
         sources.push({
           product: p.name,
           value: p.calories + ' ккал, Б' + p.protein + ' Ж' + p.fat + ' У' + p.carbs,
-          source: 'Справочник продуктов (пользовательский)',
-          detail: 'Локальная база продуктов'
+          source: p.source || 'Справочник продуктов (пользовательский)',
+          detail: p.detail || 'Локальная база продуктов'
         });
       }
     });
@@ -518,17 +532,29 @@ var NutriApp = (function() {
   function renderWeekPage() {
     var user = NutriAuth.currentUser();
     var reports = NutriDB.getStudentReports(user.id);
-    var weekDates = UI.getWeekDates(selectedDate);
+
+    if (!weekStart) weekStart = mondayOf(selectedDate);
+    var weekDates = [];
+    for (var k = 0; k < 7; k++) weekDates.push(shiftDate(weekStart, k));
     var names = UI.dayNames();
 
     updateHeader('Неделя', UI.formatDate(weekDates[0]) + ' — ' + UI.formatDate(weekDates[6]));
 
-    var html = '<div class="week-scroll mb-5">';
+    var html = '';
+
+    html += '<div class="week-nav">' +
+      '<button class="btn btn--sm btn--ghost" id="week-prev">\u2039 Назад</button>' +
+      '<button class="btn btn--sm btn--ghost" id="week-today">Сегодня</button>' +
+      '<button class="btn btn--sm btn--ghost" id="week-next">Вперёд \u203a</button>' +
+    '</div>';
+
+    html += '<div class="week-scroll mb-5" id="week-scroll">';
     weekDates.forEach(function(date, i) {
       var report = reports.find(function(r) { return r.date === date; });
       var isToday = date === UI.todayStr();
+      var isSelected = date === selectedDate;
       var status = report ? NutriAnalysis.getDayStatus(report.totals, report.norms) : 'empty';
-      var cls = 'week-day-card' + (isToday ? ' active' : '') + (report ? ' filled' : '');
+      var cls = 'week-day-card' + (isToday ? ' today' : '') + (isSelected ? ' active' : '') + (report ? ' filled' : '');
 
       html += '<div class="' + cls + '" data-date="' + date + '">' +
         '<div class="week-day-card__day">' + names[i] + '</div>' +
@@ -562,13 +588,54 @@ var NutriApp = (function() {
 
     $('#page-week').innerHTML = html;
 
-    // Click handlers
+    // Prev / next / today
+    $('#week-prev').addEventListener('click', function() {
+      weekStart = shiftDate(weekStart, -7);
+      renderWeekPage();
+    });
+    $('#week-next').addEventListener('click', function() {
+      weekStart = shiftDate(weekStart, 7);
+      renderWeekPage();
+    });
+    $('#week-today').addEventListener('click', function() {
+      weekStart = mondayOf(UI.todayStr());
+      selectedDate = UI.todayStr();
+      renderWeekPage();
+    });
+
+    // Day click — НЕ меняем weekStart, только selectedDate
     $$('.week-day-card', $('#page-week')).forEach(function(card) {
       card.addEventListener('click', function() {
         selectedDate = this.dataset.date;
         navigate('/day/' + selectedDate);
       });
     });
+
+    // Swipe (горизонтальный) для смены недели
+    var scroll = $('#week-scroll');
+    if (scroll) {
+      var sx = 0, sy = 0, moved = false;
+      scroll.addEventListener('touchstart', function(e) {
+        if (!e.touches || !e.touches[0]) return;
+        sx = e.touches[0].clientX;
+        sy = e.touches[0].clientY;
+        moved = false;
+      }, { passive: true });
+      scroll.addEventListener('touchmove', function(e) {
+        if (!e.touches || !e.touches[0]) return;
+        var dx = e.touches[0].clientX - sx;
+        var dy = e.touches[0].clientY - sy;
+        if (Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy)) moved = true;
+      }, { passive: true });
+      scroll.addEventListener('touchend', function(e) {
+        if (!moved || !e.changedTouches || !e.changedTouches[0]) return;
+        var dx = e.changedTouches[0].clientX - sx;
+        if (Math.abs(dx) < 60) return;
+        if (dx < 0) weekStart = shiftDate(weekStart, 7);
+        else weekStart = shiftDate(weekStart, -7);
+        renderWeekPage();
+      });
+    }
   }
 
   /* ---- Reports Page ---- */
@@ -1132,9 +1199,15 @@ var NutriApp = (function() {
       html += UI.emptyState('\ud83e\udd66', 'Нет продуктов', 'Добавьте продукты для точного анализа рациона');
     } else {
       products.forEach(function(p, i) {
+        var srcLine = '';
+        if (p.source || p.detail) {
+          srcLine = '<div class="product-list-item__source">\u{1F4D6} ' + escHtml(p.source || '') +
+            (p.detail ? ' &middot; ' + escHtml(p.detail) : '') + '</div>';
+        }
         html += '<div class="product-list-item" data-index="' + i + '" data-name="' + escAttr(p.name) + '">' +
           '<div class="product-list-item__name">' + escHtml(p.name) + '</div>' +
           '<div class="product-list-item__macro">' + p.calories + ' ккал &middot; Б' + p.protein + ' Ж' + p.fat + ' У' + p.carbs + '</div>' +
+          srcLine +
           '<button class="btn btn--sm btn--ghost" data-action="edit-product" data-index="' + i + '">\u270f</button>' +
           '<button class="btn btn--sm btn--ghost" data-action="del-product" data-index="' + i + '">\ud83d\uddd1</button>' +
         '</div>';
@@ -1181,6 +1254,8 @@ var NutriApp = (function() {
       '<div class="input-group"><label class="input-label">Белок (г)</label><input class="input" type="number" id="pm-prot"></div>' +
       '<div class="input-group"><label class="input-label">Жиры (г)</label><input class="input" type="number" id="pm-fat"></div>' +
       '<div class="input-group"><label class="input-label">Углеводы (г)</label><input class="input" type="number" id="pm-carbs"></div>' +
+      '<div class="input-group"><label class="input-label">Источник</label><input class="input" id="pm-source" placeholder="Название книги, справочника"></div>' +
+      '<div class="input-group"><label class="input-label">Таблица / страница</label><input class="input" id="pm-detail" placeholder="Таблица 2.3, стр. 45"></div>' +
       '<button class="btn btn--primary btn--lg" id="pm-save">Сохранить</button>'
     );
 
@@ -1192,7 +1267,9 @@ var NutriApp = (function() {
         calories: parseFloat($('#pm-cal').value) || 0,
         protein: parseFloat($('#pm-prot').value) || 0,
         fat: parseFloat($('#pm-fat').value) || 0,
-        carbs: parseFloat($('#pm-carbs').value) || 0
+        carbs: parseFloat($('#pm-carbs').value) || 0,
+        source: $('#pm-source').value.trim(),
+        detail: $('#pm-detail').value.trim()
       }).then(function() {
         m.close();
         UI.toast('Продукт добавлен', 'success');
@@ -1213,6 +1290,8 @@ var NutriApp = (function() {
       '<div class="input-group"><label class="input-label">Белок (г)</label><input class="input" type="number" id="pm-prot" value="' + p.protein + '"></div>' +
       '<div class="input-group"><label class="input-label">Жиры (г)</label><input class="input" type="number" id="pm-fat" value="' + p.fat + '"></div>' +
       '<div class="input-group"><label class="input-label">Углеводы (г)</label><input class="input" type="number" id="pm-carbs" value="' + p.carbs + '"></div>' +
+      '<div class="input-group"><label class="input-label">Источник</label><input class="input" id="pm-source" placeholder="Название книги, справочника" value="' + escAttr(p.source || '') + '"></div>' +
+      '<div class="input-group"><label class="input-label">Таблица / страница</label><input class="input" id="pm-detail" placeholder="Таблица 2.3, стр. 45" value="' + escAttr(p.detail || '') + '"></div>' +
       '<button class="btn btn--primary btn--lg" id="pm-save">Сохранить</button>'
     );
 
@@ -1222,7 +1301,9 @@ var NutriApp = (function() {
         calories: parseFloat($('#pm-cal').value) || 0,
         protein: parseFloat($('#pm-prot').value) || 0,
         fat: parseFloat($('#pm-fat').value) || 0,
-        carbs: parseFloat($('#pm-carbs').value) || 0
+        carbs: parseFloat($('#pm-carbs').value) || 0,
+        source: $('#pm-source').value.trim(),
+        detail: $('#pm-detail').value.trim()
       }).then(function() {
         m.close();
         UI.toast('Продукт обновлён', 'success');

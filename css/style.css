@@ -632,6 +632,18 @@ img { max-width: 100%; display: block; }
 }
 
 /* --- Week Card --- */
+.week-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-2);
+  margin-bottom: var(--s-3);
+}
+
+.week-nav .btn {
+  flex: 1;
+}
+
 .week-scroll {
   display: flex;
   gap: var(--s-3);
@@ -640,6 +652,7 @@ img { max-width: 100%; display: block; }
   -webkit-overflow-scrolling: touch;
   padding: var(--s-2) 0;
   scrollbar-width: none;
+  touch-action: pan-x;
 }
 
 .week-scroll::-webkit-scrollbar { display: none; }
@@ -660,6 +673,10 @@ img { max-width: 100%; display: block; }
 .week-day-card.active {
   border-color: var(--c-primary);
   background: var(--c-primary-bg);
+}
+
+.week-day-card.today {
+  box-shadow: 0 0 0 2px var(--c-primary-light) inset;
 }
 
 .week-day-card.filled {
@@ -1055,6 +1072,14 @@ img { max-width: 100%; display: block; }
 .product-list-item__macro {
   font-size: var(--fs-xs);
   color: var(--c-text-secondary);
+}
+
+.product-list-item__source {
+  font-size: var(--fs-xs);
+  color: var(--c-primary);
+  margin-top: 2px;
+  flex-basis: 100%;
+  order: 10;
 }
 
 /* --- Search --- */

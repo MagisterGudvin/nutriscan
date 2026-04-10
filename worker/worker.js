@@ -150,7 +150,24 @@ async function handleAnalyze(request, env) {
     });
   }
 
-  return jsonResponse(adaptAgentResponse(parsed));
+  const adapted = adaptAgentResponse(parsed);
+  // Если продукт совпадает с записью в teacher's справочнике — перекрываем source/detail оттуда
+  if (Array.isArray(body.products) && adapted.sources) {
+    const dict = body.products.filter(p => p && p.name);
+    adapted.sources = adapted.sources.map(s => {
+      if (!s || !s.product) return s;
+      const name = String(s.product).toLowerCase();
+      const hit = dict.find(p => name.indexOf(String(p.name).toLowerCase()) !== -1 || String(p.name).toLowerCase().indexOf(name) !== -1);
+      if (hit && hit.source) {
+        return Object.assign({}, s, {
+          source: hit.source,
+          detail: hit.detail || s.detail || ''
+        });
+      }
+      return s;
+    });
+  }
+  return jsonResponse(adapted);
 }
 
 /* Адаптирует ответ Timeweb-агента к схеме фронта.
@@ -248,14 +265,19 @@ function buildAnalysisPrompt(body) {
   }
 
   if (body.products && body.products.length) {
-    prompt += '\nСправочник продуктов (на 100г):\n';
+    prompt += '\nСправочник продуктов преподавателя (приоритетный источник, на 100г):\n';
     body.products.slice(0, 50).forEach(p => {
-      prompt += `- ${p.name}: ${p.calories} ккал, Б${p.protein} Ж${p.fat} У${p.carbs}\n`;
+      let line = `- ${p.name}: ${p.calories} ккал, Б${p.protein} Ж${p.fat} У${p.carbs}`;
+      if (p.source) {
+        line += ` [источник: ${p.source}${p.detail ? ', ' + p.detail : ''}]`;
+      }
+      prompt += line + '\n';
     });
+    prompt += '\nЕсли продукт совпадает с чем-то из этого справочника — ОБЯЗАТЕЛЬНО используй указанные там источник и реквизиты (source/detail) в ответе.\n';
   }
 
   prompt += '\nРассчитай КБЖУ каждого приёма пищи и суммарно за день. Определи дефициты и дисбалансы относительно норм. Дай 3-5 конкретных рекомендаций.';
-  prompt += '\nОБЯЗАТЕЛЬНО укажи источники данных для каждого продукта: из какой книги/справочника взяты показатели КБЖУ, номер таблицы и страницы если есть. Если продукт из переданного справочника — укажи "Справочник продуктов (пользовательский)". Если из базы знаний — укажи название книги.';
+  prompt += '\nОБЯЗАТЕЛЬНО укажи источники данных для каждого продукта: из какой книги/справочника взяты показатели КБЖУ, номер таблицы и страницы если есть. Если продукт из переданного справочника — используй указанные там source и detail. Если из базы знаний — укажи название книги.';
   prompt += '\nОтвечай строго в JSON: {"totals":{"calories":число,"protein":число,"fat":число,"carbs":число},"deficits":[""],"imbalances":[""],"recommendations":[""],"sources":[{"product":"название","value":"ккал/Б/Ж/У","source":"название источника","detail":"таблица/страница/раздел"}]}';
 
   return prompt;
