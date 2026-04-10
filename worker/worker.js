@@ -151,7 +151,11 @@ async function handleAnalyze(request, env) {
         { role: 'user', content: prompt }
       ],
       temperature: 0.2,
-      max_tokens: 2500
+      max_tokens: 2500,
+      // Подсказки для reasoning-моделей (Grok 4.1 Fast Reasoning и т. п.).
+      // Если бэкенд параметр игнорирует — никакого вреда.
+      reasoning_effort: 'low',
+      reasoning: { effort: 'low' }
     })
   });
 
