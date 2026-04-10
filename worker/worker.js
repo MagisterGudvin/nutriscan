@@ -92,6 +92,8 @@ async function handleAnalyze(request, env) {
 
   const endpoint = `https://agent.timeweb.cloud/api/v1/cloud-ai/agents/${agentId}/v1/chat/completions`;
 
+  const systemPrompt = buildSystemPrompt();
+
   const response = await fetch(endpoint, {
     method: 'POST',
     headers: {
@@ -100,12 +102,10 @@ async function handleAnalyze(request, env) {
     },
     body: JSON.stringify({
       messages: [
-        {
-          role: 'user',
-          content: prompt
-        }
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: prompt }
       ],
-      temperature: 0.3,
+      temperature: 0.2,
       max_tokens: 8000
     })
   });
@@ -250,35 +250,90 @@ function round(v) { return Math.round(v); }
 function round1(v) { return Math.round(v * 10) / 10; }
 
 
-function buildAnalysisPrompt(body) {
-  let prompt = 'Проанализируй рацион питания за день:\n\n';
+function buildSystemPrompt() {
+  return [
+    'Ты — нутрициолог-аналитик NutriCheck. Твоя задача — оценить рацион студента по КБЖУ',
+    'на основе ТОЛЬКО данных из подключённой к тебе базы знаний (Knowledge Base / RAG).',
+    '',
+    'ПРАВИЛА РАБОТЫ С БАЗОЙ ЗНАНИЙ:',
+    '1. Для каждого продукта, который встречается в рационе, ты ОБЯЗАН выполнить поиск',
+    '   по подключённой базе знаний (книги по химическому составу пищевых продуктов,',
+    '   справочники Скурихина и т. п.) и взять КБЖУ оттуда.',
+    '2. Запрещено выдумывать или брать значения из общих знаний модели — только KB.',
+    '3. В поле "source" всегда указывай конкретное название книги/справочника, найденное',
+    '   в базе знаний (например: "Химический состав российских пищевых продуктов, под ред.',
+    '   И. М. Скурихина").',
+    '4. В поле "detail" указывай конкретный фрагмент: номер таблицы, страница, раздел —',
+    '   именно так, как это указано в найденном куске базы знаний.',
+    '5. Если конкретного продукта в базе знаний нет, ищи ближайший аналог и в "detail"',
+    '   честно укажи "аналог: <название найденного продукта>".',
+    '6. Если в запросе передан "Справочник продуктов преподавателя" — для совпавших',
+    '   позиций ОБЯЗАТЕЛЬНО используй source/detail именно оттуда, они приоритетнее.',
+    '',
+    'ФОРМАТ ОТВЕТА: строго один JSON-объект, без какого-либо текста вокруг,',
+    'без markdown-обёрток ```json. Структура:',
+    '{',
+    '  "totals": {"calories": число, "protein": число, "fat": число, "carbs": число},',
+    '  "deficits": ["строка", ...],',
+    '  "imbalances": ["строка", ...],',
+    '  "recommendations": ["строка", ...],',
+    '  "sources": [',
+    '    {"product": "название", "value": "X ккал, БY ЖZ УW",',
+    '     "source": "название книги из KB", "detail": "таблица N, стр. M"}',
+    '  ]',
+    '}',
+    '',
+    'Все числа — целые или с одним знаком после точки. Никаких комментариев в JSON.',
+    'Все тексты — на русском языке.'
+  ].join('\n');
+}
 
+function buildAnalysisPrompt(body) {
+  let prompt = '';
+  prompt += 'Проанализируй рацион студента за один день. Для каждого продукта НАЙДИ КБЖУ\n';
+  prompt += 'в подключённой базе знаний (книги по составу пищевых продуктов) и используй\n';
+  prompt += 'найденные значения. В поле "source" верни название книги, в "detail" — номер\n';
+  prompt += 'таблицы и страницу из найденного фрагмента.\n\n';
+
+  prompt += '=== РАЦИОН ===\n';
   if (body.meals) {
     if (body.meals.breakfast) prompt += `Завтрак: ${body.meals.breakfast}\n`;
-    if (body.meals.lunch) prompt += `Обед: ${body.meals.lunch}\n`;
-    if (body.meals.snack) prompt += `Полдник: ${body.meals.snack}\n`;
-    if (body.meals.dinner) prompt += `Ужин: ${body.meals.dinner}\n`;
+    if (body.meals.lunch)     prompt += `Обед: ${body.meals.lunch}\n`;
+    if (body.meals.snack)     prompt += `Полдник: ${body.meals.snack}\n`;
+    if (body.meals.dinner)    prompt += `Ужин: ${body.meals.dinner}\n`;
   }
 
   if (body.norms) {
-    prompt += `\nНормы студента: ${body.norms.calories} ккал, белок ${body.norms.protein}г, жиры ${body.norms.fat}г, углеводы ${body.norms.carbs}г\n`;
+    prompt += '\n=== ИНДИВИДУАЛЬНЫЕ НОРМЫ СТУДЕНТА ===\n';
+    prompt += `Калории: ${body.norms.calories} ккал/сутки\n`;
+    prompt += `Белок:   ${body.norms.protein} г\n`;
+    prompt += `Жиры:    ${body.norms.fat} г\n`;
+    prompt += `Углеводы: ${body.norms.carbs} г\n`;
+    if (body.norms.omega3 != null) prompt += `Омега-3: ${body.norms.omega3} г (минимум)\n`;
+    if (body.norms.omega6 != null) prompt += `Омега-6: ${body.norms.omega6} г (максимум)\n`;
   }
 
   if (body.products && body.products.length) {
-    prompt += '\nСправочник продуктов преподавателя (приоритетный источник, на 100г):\n';
+    prompt += '\n=== СПРАВОЧНИК ПРОДУКТОВ ПРЕПОДАВАТЕЛЯ ===\n';
+    prompt += '(значения на 100 г, ПРИОРИТЕТНЫЙ источник — для совпавших позиций используй именно эти source/detail)\n';
     body.products.slice(0, 50).forEach(p => {
       let line = `- ${p.name}: ${p.calories} ккал, Б${p.protein} Ж${p.fat} У${p.carbs}`;
-      if (p.source) {
-        line += ` [источник: ${p.source}${p.detail ? ', ' + p.detail : ''}]`;
-      }
+      if (p.source) line += ` [источник: ${p.source}${p.detail ? ', ' + p.detail : ''}]`;
       prompt += line + '\n';
     });
-    prompt += '\nЕсли продукт совпадает с чем-то из этого справочника — ОБЯЗАТЕЛЬНО используй указанные там источник и реквизиты (source/detail) в ответе.\n';
   }
 
-  prompt += '\nРассчитай КБЖУ каждого приёма пищи и суммарно за день. Определи дефициты и дисбалансы относительно норм. Дай 3-5 конкретных рекомендаций.';
-  prompt += '\nОБЯЗАТЕЛЬНО укажи источники данных для каждого продукта: из какой книги/справочника взяты показатели КБЖУ, номер таблицы и страницы если есть. Если продукт из переданного справочника — используй указанные там source и detail. Если из базы знаний — укажи название книги.';
-  prompt += '\nОтвечай строго в JSON: {"totals":{"calories":число,"protein":число,"fat":число,"carbs":число},"deficits":[""],"imbalances":[""],"recommendations":[""],"sources":[{"product":"название","value":"ккал/Б/Ж/У","source":"название источника","detail":"таблица/страница/раздел"}]}';
+  prompt += '\n=== ЗАДАЧА ===\n';
+  prompt += '1. Для КАЖДОГО продукта из рациона выполни поиск в подключённой базе знаний.\n';
+  prompt += '   Возьми КБЖУ из найденного фрагмента и зафиксируй название книги + таблицу/страницу.\n';
+  prompt += '2. Рассчитай суммарные КБЖУ за день (поле totals).\n';
+  prompt += '3. Сравни с нормами и выпиши:\n';
+  prompt += '   - deficits: чего не хватает (с указанием численного дефицита),\n';
+  prompt += '   - imbalances: дисбаланс БЖУ или микронутриентов,\n';
+  prompt += '   - recommendations: 3–5 конкретных, выполнимых рекомендаций именно под этот рацион.\n';
+  prompt += '4. Заполни массив sources: по одной записи на каждый ключевой продукт рациона.\n';
+  prompt += '   Никаких "общих знаний" — только то, что нашлось в базе знаний или в справочнике преподавателя.\n\n';
+  prompt += 'Верни ответ строго в формате JSON, описанном в системной инструкции. Без обёрток, без пояснений.';
 
   return prompt;
 }
