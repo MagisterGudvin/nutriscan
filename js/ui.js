@@ -116,12 +116,20 @@ var NutriUI = (function() {
     return days[d.getDay()] + ', ' + d.getDate() + ' ' + months[d.getMonth()];
   }
 
+  function _fmtLocal(d) {
+    var y = d.getFullYear();
+    var m = String(d.getMonth() + 1).padStart(2, '0');
+    var day = String(d.getDate()).padStart(2, '0');
+    return y + '-' + m + '-' + day;
+  }
+
   function todayStr() {
-    return new Date().toISOString().slice(0, 10);
+    return _fmtLocal(new Date());
   }
 
   function getWeekDates(centerDate) {
-    var d = new Date(centerDate + 'T00:00:00');
+    var parts = centerDate.split('-');
+    var d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
     var dow = d.getDay();
     var monday = new Date(d);
     monday.setDate(d.getDate() - ((dow + 6) % 7));
@@ -129,7 +137,7 @@ var NutriUI = (function() {
     for (var i = 0; i < 7; i++) {
       var dd = new Date(monday);
       dd.setDate(monday.getDate() + i);
-      dates.push(dd.toISOString().slice(0, 10));
+      dates.push(_fmtLocal(dd));
     }
     return dates;
   }

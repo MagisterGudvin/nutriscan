@@ -13,17 +13,26 @@ var NutriApp = (function() {
   var selectedStudentId = null;
   var weekStart = null; // Понедельник отображаемой недели, независимо от selectedDate
 
+  function fmtLocal(d) {
+    var y = d.getFullYear();
+    var m = String(d.getMonth() + 1).padStart(2, '0');
+    var day = String(d.getDate()).padStart(2, '0');
+    return y + '-' + m + '-' + day;
+  }
+
   function mondayOf(dateStr) {
-    var d = new Date(dateStr + 'T00:00:00');
-    var dow = d.getDay();
+    var parts = dateStr.split('-');
+    var d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+    var dow = d.getDay(); // 0=Sun..6=Sat
     d.setDate(d.getDate() - ((dow + 6) % 7));
-    return d.toISOString().slice(0, 10);
+    return fmtLocal(d);
   }
 
   function shiftDate(dateStr, days) {
-    var d = new Date(dateStr + 'T00:00:00');
+    var parts = dateStr.split('-');
+    var d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
     d.setDate(d.getDate() + days);
-    return d.toISOString().slice(0, 10);
+    return fmtLocal(d);
   }
 
   /* ---- Router ---- */
