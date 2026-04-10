@@ -53,6 +53,16 @@ jobs:
               ]
             }' > metadata.json
 
+      - name: Debug secret lengths
+        env:
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          echo "token_len=$(printf '%s' "$CF_TOKEN" | wc -c) account_len=$(printf '%s' "$CF_ACCOUNT" | wc -c)"
+          echo "account_first2=$(printf '%s' "$CF_ACCOUNT" | head -c 2) account_last2=$(printf '%s' "$CF_ACCOUNT" | tail -c 2)"
+          curl -sS -H "Authorization: Bearer $CF_TOKEN" "$CF_API/user/tokens/verify" | jq .
+          curl -sS -H "Authorization: Bearer $CF_TOKEN" "$CF_API/accounts" | jq '.result[0].id'
+
       - name: Upload Worker via CF API
         env:
           CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
