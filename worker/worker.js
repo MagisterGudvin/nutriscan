@@ -120,12 +120,18 @@ function setCached(key, value) {
 
 async function handleAnalyze(request, env) {
   const body = await request.json();
+  const url = new URL(request.url);
+  const noCache = url.searchParams.get('nocache') === '1' || body.nocache === true;
 
   // Cache lookup
   const cacheKey = analyzeCacheKey(body);
-  const cached = getCached(cacheKey);
-  if (cached) {
-    return jsonResponse(Object.assign({}, cached, { _cached: true }));
+  if (!noCache) {
+    const cached = getCached(cacheKey);
+    if (cached) {
+      return jsonResponse(Object.assign({}, cached, { _cached: true }));
+    }
+  } else {
+    ANALYZE_CACHE.delete(cacheKey);
   }
 
   const prompt = buildAnalysisPrompt(body);
@@ -201,8 +207,20 @@ async function handleAnalyze(request, env) {
       return s;
     });
   }
-  setCached(cacheKey, adapted);
+  // Не кэшируем "пустышки" (нулевые totals или пустые meals/sources) —
+  // иначе один неудачный запрос отравит кэш на час.
+  if (isMeaningfulAnalyze(adapted)) {
+    setCached(cacheKey, adapted);
+  }
   return jsonResponse(adapted);
+}
+
+function isMeaningfulAnalyze(r) {
+  if (!r || !r.totals) return false;
+  const t = r.totals;
+  const hasNumbers = (t.calories || 0) > 0 || (t.protein || 0) > 0 || (t.fat || 0) > 0 || (t.carbs || 0) > 0;
+  const hasSources = Array.isArray(r.sources) && r.sources.length > 0;
+  return hasNumbers || hasSources;
 }
 
 /* Адаптирует ответ Timeweb-агента к схеме фронта.
