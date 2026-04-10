@@ -11,33 +11,72 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      CF_API: https://api.cloudflare.com/client/v4
+      WORKER_NAME: nutri-worker
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
+      - name: Read worker config
+        id: cfg
+        run: |
+          REPO=$(grep -E '^GITHUB_REPO' worker/wrangler.toml | sed -E 's/.*"([^"]+)".*/\1/')
+          BRANCH=$(grep -E '^GITHUB_BRANCH' worker/wrangler.toml | sed -E 's/.*"([^"]+)".*/\1/')
+          DATE=$(grep -E '^compatibility_date' worker/wrangler.toml | sed -E 's/.*"([^"]+)".*/\1/')
+          echo "repo=$REPO" >> $GITHUB_OUTPUT
+          echo "branch=$BRANCH" >> $GITHUB_OUTPUT
+          echo "date=$DATE" >> $GITHUB_OUTPUT
 
-      - name: Deploy Worker
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          workingDirectory: worker
-          command: deploy
-
-      - name: Upload Worker Secrets
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          workingDirectory: worker
-          command: deploy
-          secrets: |
-            GITHUB_TOKEN
-            TIMEWEB_TOKEN
+      - name: Build metadata.json
         env:
-          GITHUB_TOKEN: ${{ secrets.GH_DATA_TOKEN }}
+          GH_REPO: ${{ steps.cfg.outputs.repo }}
+          GH_BRANCH: ${{ steps.cfg.outputs.branch }}
+          COMPAT_DATE: ${{ steps.cfg.outputs.date }}
+          GH_DATA_TOKEN: ${{ secrets.GH_DATA_TOKEN }}
           TIMEWEB_TOKEN: ${{ secrets.TIMEWEB_TOKEN }}
+        run: |
+          jq -n \
+            --arg date "$COMPAT_DATE" \
+            --arg ghrepo "$GH_REPO" \
+            --arg ghbranch "$GH_BRANCH" \
+            --arg ghtoken "$GH_DATA_TOKEN" \
+            --arg twtoken "$TIMEWEB_TOKEN" \
+            '{
+              main_module: "worker.js",
+              compatibility_date: $date,
+              bindings: [
+                {type:"plain_text", name:"GITHUB_REPO",  text:$ghrepo},
+                {type:"plain_text", name:"GITHUB_BRANCH",text:$ghbranch},
+                {type:"secret_text",name:"GITHUB_TOKEN", text:$ghtoken},
+                {type:"secret_text",name:"TIMEWEB_TOKEN",text:$twtoken}
+              ]
+            }' > metadata.json
+
+      - name: Upload Worker via CF API
+        env:
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -e
+          RESP=$(curl -sS -X PUT \
+            "$CF_API/accounts/$CF_ACCOUNT/workers/scripts/$WORKER_NAME" \
+            -H "Authorization: Bearer $CF_TOKEN" \
+            -F "metadata=@metadata.json;type=application/json" \
+            -F "worker.js=@worker/worker.js;type=application/javascript+module")
+          echo "$RESP" | jq .
+          OK=$(echo "$RESP" | jq -r '.success')
+          if [ "$OK" != "true" ]; then
+            echo "Worker upload failed"; exit 1
+          fi
+
+      - name: Enable workers.dev subdomain
+        env:
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          curl -sS -X POST \
+            "$CF_API/accounts/$CF_ACCOUNT/workers/scripts/$WORKER_NAME/subdomain" \
+            -H "Authorization: Bearer $CF_TOKEN" \
+            -H "Content-Type: application/json" \
+            --data '{"enabled":true}' | jq .
