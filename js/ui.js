@@ -1,5 +1,5 @@
 /* ============================================
-   NutriCheck — UI Module
+   NutriForce — UI Module
    ============================================ */
 var NutriUI = (function() {
   'use strict';

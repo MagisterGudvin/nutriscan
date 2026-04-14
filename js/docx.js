@@ -1,5 +1,5 @@
 /* ============================================
-   NutriCheck — DOCX Export (WordprocessingML XML)
+   NutriForce — DOCX Export (WordprocessingML XML)
    ============================================ */
 var NutriDocx = (function() {
   'use strict';
@@ -289,7 +289,7 @@ var NutriDocx = (function() {
   function generateReport(student, report) {
     var body = '';
 
-    body += para('NutriCheck — Отчёт за день', { size: 36, bold: true, color: '#16a34a', spacing: 100 });
+    body += para('NutriForce — Отчёт за день', { size: 36, bold: true, color: '#16a34a', spacing: 100 });
     body += para(student.name + ' — ' + report.date, { size: 28, bold: true, spacing: 80 });
     body += para('Дата формирования отчёта: ' + new Date().toISOString().slice(0, 10), { size: 20, color: '#64748b', spacing: 200, italic: true });
 
@@ -355,7 +355,7 @@ var NutriDocx = (function() {
     // Подпись
     body += para('', { spacing: 200 });
     body += para('___________________________________', { size: 20, color: '#94a3b8', spacing: 40 });
-    body += para('Отчёт сформирован системой NutriCheck. Оценка производится на основе формулы Миффлина–Сан-Жеора с учётом пола, возраста, роста, массы тела и уровня физической активности студента.', { size: 18, color: '#94a3b8', italic: true });
+    body += para('Отчёт сформирован системой NutriForce. Оценка производится на основе формулы Миффлина–Сан-Жеора с учётом пола, возраста, роста, массы тела и уровня физической активности студента.', { size: 18, color: '#94a3b8', italic: true });
 
     return wrapDocument(body);
   }
@@ -363,7 +363,7 @@ var NutriDocx = (function() {
   function generateWeekReport(student, reports) {
     var body = '';
 
-    body += para('NutriCheck — Недельный отчёт', { size: 36, bold: true, color: '#16a34a', spacing: 100 });
+    body += para('NutriForce — Недельный отчёт', { size: 36, bold: true, color: '#16a34a', spacing: 100 });
     body += para(student.name, { size: 28, bold: true, spacing: 80 });
     body += para('Дата формирования отчёта: ' + new Date().toISOString().slice(0, 10), { size: 20, color: '#64748b', spacing: 200, italic: true });
 
@@ -519,7 +519,7 @@ var NutriDocx = (function() {
     // Подпись
     body += para('', { spacing: 200 });
     body += para('___________________________________', { size: 20, color: '#94a3b8', spacing: 40 });
-    body += para('Отчёт сформирован системой NutriCheck. Оценка производится на основе формулы Миффлина–Сан-Жеора с учётом пола, возраста, роста, массы тела и уровня физической активности студента.', { size: 18, color: '#94a3b8', italic: true });
+    body += para('Отчёт сформирован системой NutriForce. Оценка производится на основе формулы Миффлина–Сан-Жеора с учётом пола, возраста, роста, массы тела и уровня физической активности студента.', { size: 18, color: '#94a3b8', italic: true });
 
     return wrapDocument(body);
   }
@@ -527,7 +527,7 @@ var NutriDocx = (function() {
   function generateAllStudentsReport(students, allReports) {
     var body = '';
 
-    body += para('NutriCheck — Сводный отчёт по группе', { size: 36, bold: true, color: '#16a34a', spacing: 100 });
+    body += para('NutriForce — Сводный отчёт по группе', { size: 36, bold: true, color: '#16a34a', spacing: 100 });
     body += para('Дата формирования: ' + new Date().toISOString().slice(0, 10), { size: 22, spacing: 100, color: '#64748b', italic: true });
     body += para('Всего студентов: ' + students.length, { size: 22, spacing: 200, bold: true });
 
@@ -658,7 +658,7 @@ var NutriDocx = (function() {
     // Подпись
     body += para('', { spacing: 200 });
     body += para('___________________________________', { size: 20, color: '#94a3b8', spacing: 40 });
-    body += para('Отчёт сформирован системой NutriCheck. Оценка производится на основе формулы Миффлина–Сан-Жеора с учётом пола, возраста, роста, массы тела и уровня физической активности студента.', { size: 18, color: '#94a3b8', italic: true });
+    body += para('Отчёт сформирован системой NutriForce. Оценка производится на основе формулы Миффлина–Сан-Жеора с учётом пола, возраста, роста, массы тела и уровня физической активности студента.', { size: 18, color: '#94a3b8', italic: true });
 
     return wrapDocument(body);
   }

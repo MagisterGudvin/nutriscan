@@ -1,5 +1,5 @@
 /* ============================================
-   NutriCheck — Cloudflare Worker
+   NutriForce — Cloudflare Worker
    ============================================ */
 
 const CORS_HEADERS = {
@@ -374,7 +374,7 @@ function buildSystemPrompt() {
   // прописано в dashboard агента. Без неё не-reasoning модели возвращают
   // пустой/невалидный JSON и фронт получает нули.
   return [
-    'Ты — нутрициолог-аналитик NutriCheck. Анализируй дневной рацион студента.',
+    'Ты — нутрициолог-аналитик NutriForce. Анализируй дневной рацион студента.',
     '',
     '=== ЖЕЛЕЗНЫЕ ПРАВИЛА ===',
     'A. КАЖДЫЙ продукт, который пользователь перечислил в рационе, ОБЯЗАН попасть',
@@ -492,7 +492,7 @@ async function githubRequest(env, path, method, body, contentType) {
   const headers = {
     'Authorization': `Bearer ${env.GITHUB_TOKEN}`,
     'Accept': 'application/vnd.github.v3+json',
-    'User-Agent': 'NutriCheck-Worker',
+    'User-Agent': 'NutriForce-Worker',
   };
   if (contentType) headers['Content-Type'] = contentType;
 
@@ -540,7 +540,7 @@ async function deleteGithubFile(env, path) {
     headers: {
       'Authorization': `Bearer ${env.GITHUB_TOKEN}`,
       'Accept': 'application/vnd.github.v3+json',
-      'User-Agent': 'NutriCheck-Worker',
+      'User-Agent': 'NutriForce-Worker',
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({

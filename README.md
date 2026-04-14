@@ -1,4 +1,4 @@
-# NutriCheck
+# NutriForce
 
 Веб-приложение для анализа питания студентов. Чистый HTML/CSS/JS без сборки и npm,
 бэкендом служит Cloudflare Worker, который проксирует запросы к Timeweb AI Agent

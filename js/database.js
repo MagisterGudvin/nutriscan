@@ -1,5 +1,5 @@
 /* ============================================
-   NutriCheck — Database Module
+   NutriForce — Database Module
    --------------------------------------------
    In-memory кэш + удалённое хранилище через
    Cloudflare Worker (GitHub JSON). Никаких

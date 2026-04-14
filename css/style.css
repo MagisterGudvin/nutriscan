@@ -1,5 +1,5 @@
 /* ============================================
-   NutriCheck Design System
+   NutriForce Design System
    ============================================ */
 
 /* --- Reset & Base --- */
@@ -1346,6 +1346,76 @@ img { max-width: 100%; display: block; }
 }
 
 .confirm-dialog__actions .btn { flex: 1; }
+
+/* --- Dermatoscopy --- */
+.derm-card { padding: var(--s-4); }
+.derm-card__row {
+  display: flex;
+  gap: var(--s-3);
+  align-items: flex-start;
+}
+.derm-card__body { flex: 1; min-width: 0; }
+.derm-card__title {
+  font-weight: 700;
+  font-size: var(--fs-md);
+  margin-bottom: var(--s-1);
+}
+.derm-card__meta {
+  font-size: var(--fs-sm);
+  color: var(--c-text-secondary);
+  margin-bottom: var(--s-1);
+}
+.derm-card__idx { margin-top: var(--s-2); display: flex; gap: var(--s-2); flex-wrap: wrap; }
+.derm-idx {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: var(--r-full);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+}
+.derm-idx--acne  { background: #fef3c7; color: #92400e; }
+.derm-idx--aging { background: #ede9fe; color: #5b21b6; }
+.derm-card__notes {
+  margin-top: var(--s-3);
+  padding-top: var(--s-3);
+  border-top: 1px solid var(--c-border-light);
+  font-size: var(--fs-sm);
+  color: var(--c-text);
+  white-space: pre-wrap;
+}
+.derm-thumb {
+  width: 72px;
+  height: 72px;
+  border-radius: var(--r-lg);
+  object-fit: cover;
+  flex-shrink: 0;
+  background: var(--c-border-light);
+}
+.derm-thumb--empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  color: var(--c-text-secondary);
+}
+.derm-preview {
+  display: flex;
+  gap: var(--s-2);
+  flex-wrap: wrap;
+  margin-top: var(--s-2);
+}
+.derm-preview__img {
+  width: 64px;
+  height: 64px;
+  border-radius: var(--r-md);
+  object-fit: cover;
+  border: 1px solid var(--c-border-light);
+}
+
+.rec-block--skin {
+  border-left: 3px solid #8b5cf6;
+  background: #f5f3ff;
+}
 
 /* --- Micronutrients table --- */
 .micro-group {

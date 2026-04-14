@@ -1,5 +1,5 @@
 /* ============================================
-   NutriCheck — App Module (Router + Pages)
+   NutriForce — App Module (Router + Pages)
    ============================================ */
 var NutriApp = (function() {
   'use strict';
@@ -99,6 +99,9 @@ var NutriApp = (function() {
     } else if (hash === '/reports') {
       showPage('reports');
       renderReportsPage();
+    } else if (hash === '/derm') {
+      showPage('derm');
+      renderDermPage();
     } else if (hash === '/profile') {
       showPage('profile');
       renderProfilePage();
@@ -149,6 +152,9 @@ var NutriApp = (function() {
       '</button>' +
       '<button class="nav-item' + (hash === '/reports' ? ' active' : '') + '" data-nav="/reports">' +
         '<span class="nav-icon">\ud83d\udcca</span><span class="nav-label">Отчёты</span>' +
+      '</button>' +
+      '<button class="nav-item' + (hash === '/derm' ? ' active' : '') + '" data-nav="/derm">' +
+        '<span class="nav-icon">\ud83d\udd2c</span><span class="nav-label">Кожа</span>' +
       '</button>' +
       '<button class="nav-item' + (hash === '/profile' ? ' active' : '') + '" data-nav="/profile">' +
         '<span class="nav-icon">\ud83d\udc64</span><span class="nav-label">Профиль</span>' +
@@ -209,7 +215,7 @@ var NutriApp = (function() {
 
     var status = NutriAnalysis.getDayStatus(todayReport ? todayReport.totals : null, norms);
 
-    updateHeader('NutriCheck', null,
+    updateHeader('NutriForce', null,
       '<button class="btn btn--logout" title="Выйти" aria-label="Выйти" onclick="NutriApp.logout()">' + LOGOUT_ICON + '</button>');
 
     var html = '';
@@ -556,6 +562,18 @@ var NutriApp = (function() {
       html += '</div>';
     }
 
+    // Skin-nutrition correlation (derm recommendations)
+    var user = NutriAuth.currentUser();
+    var skin = computeSkinRecommendations(report.totals, report.norms, user);
+    if (skin.length) {
+      html += '<div class="detail-section">' +
+        '<div class="detail-section__title">Кожа и питание</div>';
+      skin.forEach(function(s) {
+        html += '<div class="rec-block rec-block--skin">' + escHtml(s) + '</div>';
+      });
+      html += '</div>';
+    }
+
     if (report.teacherComment) {
       html += '<div class="detail-section">' +
         '<div class="detail-section__title">Комментарий преподавателя</div>' +
@@ -817,6 +835,286 @@ var NutriApp = (function() {
         navigate('/day/' + selectedDate);
       });
     });
+  }
+
+  /* ============================================
+     ДЕРМАТОСКОПИЯ
+     Записи хранятся в user.dermatoscopy = [...].
+     Каждая запись: { id, date, time, zone, device, exam,
+     acneIndex, agingIndex, notes, images:[dataURL,...] }.
+     ============================================ */
+
+  var DERM_ZONES = [
+    { v: 'face',  l: 'Лицо' },
+    { v: 'neck',  l: 'Шея' },
+    { v: 'back',  l: 'Спина' },
+    { v: 'chest', l: 'Грудь' },
+    { v: 'limbs', l: 'Конечности' }
+  ];
+  var DERM_DEVICES = [
+    { v: 'optical', l: 'Дерматоскоп (оптический)' },
+    { v: 'digital', l: 'Цифровой дерматоскоп' },
+    { v: 'photo',   l: 'Фото-дерматоскоп' }
+  ];
+  var DERM_EXAMS = [
+    { v: 'invivo',      l: 'in vivo' },
+    { v: 'contrast',    l: 'С контрастом' },
+    { v: 'multimodal',  l: 'Мультимодальный' }
+  ];
+
+  function dermZoneLabel(v) { var x = DERM_ZONES.find(function(z){return z.v===v;}); return x ? x.l : v; }
+  function dermDeviceLabel(v) { var x = DERM_DEVICES.find(function(z){return z.v===v;}); return x ? x.l : v; }
+  function dermExamLabel(v) { var x = DERM_EXAMS.find(function(z){return z.v===v;}); return x ? x.l : v; }
+
+  function renderDermPage() {
+    var user = NutriAuth.currentUser();
+    var records = (user.dermatoscopy || []).slice().sort(function(a,b) {
+      return (b.date + b.time).localeCompare(a.date + a.time);
+    });
+
+    updateHeader('Дерматоскопия', 'Мониторинг состояния кожи',
+      '<button class="btn btn--logout" title="Выйти" aria-label="Выйти" onclick="NutriApp.logout()">' + LOGOUT_ICON + '</button>');
+
+    var html = '';
+    html += '<button class="btn btn--primary btn--lg mb-4" style="width:100%" onclick="NutriApp.dermCreate()">+ Новая дерматоскопическая запись</button>';
+
+    if (!records.length) {
+      html += '<div class="card"><div class="empty-state">' +
+        '<div class="empty-state__icon">\ud83d\udd2c</div>' +
+        '<div class="empty-state__title">Нет записей</div>' +
+        '<div class="empty-state__text">Создайте первую запись — зона, дата, дерматоскоп и изображения.</div>' +
+      '</div></div>';
+    } else {
+      records.forEach(function(r) {
+        var imgCount = (r.images || []).length;
+        var thumb = imgCount ? '<img class="derm-thumb" src="' + r.images[0] + '" alt="">' : '<div class="derm-thumb derm-thumb--empty">\ud83d\udd2c</div>';
+        html += '<div class="card mb-3 derm-card" data-id="' + escAttr(r.id) + '">' +
+          '<div class="derm-card__row">' +
+            thumb +
+            '<div class="derm-card__body">' +
+              '<div class="derm-card__title">' + escHtml(dermZoneLabel(r.zone)) + '</div>' +
+              '<div class="derm-card__meta">' + escHtml(UI.formatDate(r.date)) + (r.time ? ', ' + escHtml(r.time) : '') + '</div>' +
+              '<div class="derm-card__meta">' + escHtml(dermDeviceLabel(r.device)) + ' · ' + escHtml(dermExamLabel(r.exam)) + '</div>' +
+              (r.acneIndex != null || r.agingIndex != null
+                ? '<div class="derm-card__idx">' +
+                    (r.acneIndex != null ? '<span class="derm-idx derm-idx--acne">Акне: ' + r.acneIndex + '/10</span>' : '') +
+                    (r.agingIndex != null ? '<span class="derm-idx derm-idx--aging">Старение: ' + r.agingIndex + '/10</span>' : '') +
+                  '</div>' : '') +
+              (imgCount > 1 ? '<div class="derm-card__meta text-xs">+' + (imgCount - 1) + ' фото</div>' : '') +
+            '</div>' +
+            '<button class="btn btn--sm btn--secondary" onclick="NutriApp.dermDelete(\'' + escAttr(r.id) + '\')">\ud83d\uddd1</button>' +
+          '</div>' +
+          (r.notes ? '<div class="derm-card__notes">' + escHtml(r.notes) + '</div>' : '') +
+        '</div>';
+      });
+    }
+
+    $('#page-derm').innerHTML = html;
+  }
+
+  function dermCreate() {
+    var now = new Date();
+    var pad = function(n) { return n < 10 ? '0' + n : '' + n; };
+    var today = now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate());
+    var nowTime = pad(now.getHours()) + ':' + pad(now.getMinutes());
+
+    var zoneOpts = DERM_ZONES.map(function(z) { return '<option value="' + z.v + '">' + z.l + '</option>'; }).join('');
+    var devOpts  = DERM_DEVICES.map(function(z) { return '<option value="' + z.v + '">' + z.l + '</option>'; }).join('');
+    var examOpts = DERM_EXAMS.map(function(z) { return '<option value="' + z.v + '">' + z.l + '</option>'; }).join('');
+
+    var gridStyle = 'display:grid;grid-template-columns:1fr 1fr;gap:var(--s-3)';
+    var content =
+      '<div class="modal__title">Новая дерматоскопическая запись</div>' +
+      '<div class="input-group"><label class="input-label">Зона тела</label>' +
+        '<select class="input" id="derm-zone">' + zoneOpts + '</select></div>' +
+      '<div style="' + gridStyle + '">' +
+        '<div class="input-group"><label class="input-label">Дата</label><input class="input" type="date" id="derm-date" value="' + today + '"></div>' +
+        '<div class="input-group"><label class="input-label">Время</label><input class="input" type="time" id="derm-time" value="' + nowTime + '"></div>' +
+      '</div>' +
+      '<div class="input-group"><label class="input-label">Тип дерматоскопа</label>' +
+        '<select class="input" id="derm-device">' + devOpts + '</select></div>' +
+      '<div class="input-group"><label class="input-label">Тип осмотра</label>' +
+        '<select class="input" id="derm-exam">' + examOpts + '</select></div>' +
+      '<div style="' + gridStyle + '">' +
+        '<div class="input-group"><label class="input-label">Индекс акне (0-10)</label><input class="input" type="number" min="0" max="10" step="0.5" id="derm-acne" placeholder="—"></div>' +
+        '<div class="input-group"><label class="input-label">Индекс старения (0-10)</label><input class="input" type="number" min="0" max="10" step="0.5" id="derm-aging" placeholder="—"></div>' +
+      '</div>' +
+      '<div class="input-group"><label class="input-label">Заметки</label>' +
+        '<textarea class="input" id="derm-notes" rows="3" placeholder="Жалобы, клиническая картина, субъективное состояние…"></textarea></div>' +
+      '<div class="input-group"><label class="input-label">Фото / видео с дерматоскопа</label>' +
+        '<input type="file" id="derm-files" accept="image/*,video/*" multiple>' +
+        '<div class="text-xs text-secondary mt-1">Фото сжимаются до 1600 пикс. по длинной стороне. Видео-файлы пока не сохраняются.</div>' +
+        '<div id="derm-preview" class="derm-preview"></div>' +
+      '</div>' +
+      '<div style="display:flex;gap:var(--s-3);margin-top:var(--s-4)">' +
+        '<button class="btn btn--secondary" id="derm-cancel-btn" style="flex:1">Отмена</button>' +
+        '<button class="btn btn--primary" id="derm-save-btn" style="flex:1">Сохранить</button>' +
+      '</div>';
+
+    var modalHandle = NutriUI.showModal(content);
+    dermModalHandle = modalHandle;
+
+    $('#derm-cancel-btn').addEventListener('click', function() { modalHandle.close(); });
+
+    var images = [];
+    var filesInput = $('#derm-files');
+    filesInput.addEventListener('change', function(e) {
+      var files = Array.from(e.target.files || []);
+      files.forEach(function(f) {
+        if (!f.type.startsWith('image/')) return;
+        dermReadDownscale(f).then(function(dataUrl) {
+          images.push(dataUrl);
+          var img = document.createElement('img');
+          img.src = dataUrl;
+          img.className = 'derm-preview__img';
+          $('#derm-preview').appendChild(img);
+        }).catch(function(err) {
+          NutriUI.toast('Не удалось прочитать файл: ' + err.message, 'error');
+        });
+      });
+    });
+
+    $('#derm-save-btn').addEventListener('click', function() {
+      var record = {
+        id: 'd_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+        zone: $('#derm-zone').value,
+        date: $('#derm-date').value,
+        time: $('#derm-time').value,
+        device: $('#derm-device').value,
+        exam: $('#derm-exam').value,
+        notes: $('#derm-notes').value.trim(),
+        images: images,
+        createdAt: new Date().toISOString()
+      };
+      var a = $('#derm-acne').value;
+      var g = $('#derm-aging').value;
+      if (a !== '') record.acneIndex = parseFloat(a);
+      if (g !== '') record.agingIndex = parseFloat(g);
+
+      if (!record.date) {
+        NutriUI.toast('Укажите дату осмотра', 'error');
+        return;
+      }
+
+      var user = NutriAuth.currentUser();
+      var list = (user.dermatoscopy || []).slice();
+      list.push(record);
+
+      NutriDB.updateUser(user.id, { dermatoscopy: list }).then(function() {
+        NutriUI.toast('Запись сохранена', 'success');
+        modalHandle.close();
+        renderDermPage();
+      }).catch(function(err) {
+        NutriUI.toast('Не удалось сохранить: ' + err.message, 'error');
+      });
+    });
+  }
+
+  var dermModalHandle = null;
+  function dermCloseModal() {
+    if (dermModalHandle) { dermModalHandle.close(); dermModalHandle = null; }
+  }
+
+  function dermDelete(id) {
+    if (!confirm('Удалить запись?')) return;
+    var user = NutriAuth.currentUser();
+    var list = (user.dermatoscopy || []).filter(function(r) { return r.id !== id; });
+    NutriDB.updateUser(user.id, { dermatoscopy: list }).then(function() {
+      NutriUI.toast('Удалено', 'success');
+      renderDermPage();
+    }).catch(function(err) {
+      NutriUI.toast('Ошибка: ' + err.message, 'error');
+    });
+  }
+
+  // Читает image-файл, сжимает до MAX_SIDE и возвращает data URL (jpeg 0.75).
+  function dermReadDownscale(file) {
+    var MAX_SIDE = 1600;
+    return new Promise(function(resolve, reject) {
+      var reader = new FileReader();
+      reader.onerror = function() { reject(new Error('FileReader error')); };
+      reader.onload = function(e) {
+        var img = new Image();
+        img.onload = function() {
+          var w = img.width, h = img.height;
+          var scale = Math.min(1, MAX_SIDE / Math.max(w, h));
+          var canvas = document.createElement('canvas');
+          canvas.width = Math.round(w * scale);
+          canvas.height = Math.round(h * scale);
+          var ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          try {
+            resolve(canvas.toDataURL('image/jpeg', 0.75));
+          } catch (err) { reject(err); }
+        };
+        img.onerror = function() { reject(new Error('Image decode error')); };
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  /* Связка кожи и питания. Возвращает массив строк-рекомендаций.
+     Логика: берём последнюю дерматоскопическую запись, сопоставляем
+     её индексы (акне/старение) с фактическим покрытием нутриентов
+     по норме. Пороги: индекс ≥ 5 = высокий, покрытие < 80% = дефицит. */
+  function computeSkinRecommendations(totals, norms, user) {
+    if (!user || !totals || !norms) return [];
+    var records = user.dermatoscopy || [];
+    if (!records.length) return [];
+    var last = records.slice().sort(function(a, b) {
+      return (b.date + (b.time||'')).localeCompare(a.date + (a.time||''));
+    })[0];
+    if (!last) return [];
+
+    var out = [];
+    var cover = function(k) {
+      var v = +totals[k] || 0, n = +norms[k] || 0;
+      return n ? v / n : 1;
+    };
+
+    var acne  = last.acneIndex;
+    var aging = last.agingIndex;
+
+    if (acne != null && acne >= 5) {
+      var low = [];
+      if (cover('zinc') < 0.8)   low.push('цинк');
+      if (cover('omega3') < 0.8) low.push('омега-3');
+      if (cover('vit_a') < 0.8)  low.push('витамин А');
+      if (low.length) {
+        out.push('Индекс акне ' + acne + '/10: повысьте ' + low.join(', ') +
+          '. Источники: морепродукты, семена тыквы, льняное масло, печень, яйца. ' +
+          'Ограничьте молочные продукты и рафинированные углеводы (высокая гликемическая нагрузка провоцирует воспалительные акне).');
+      } else {
+        out.push('Индекс акне ' + acne + '/10 при нормальном покрытии цинка и Ω-3: ограничьте гликемическую нагрузку и молочные продукты.');
+      }
+    }
+
+    if (aging != null && aging >= 5) {
+      var lowA = [];
+      if (cover('vit_c') < 0.8)   lowA.push('витамин C');
+      if (cover('silicon') < 0.8) lowA.push('кремний');
+      if (cover('vit_e') < 0.8)   lowA.push('витамин E');
+      if (cover('selenium') < 0.8) lowA.push('селен');
+      if (lowA.length) {
+        out.push('Индекс старения ' + aging + '/10: повысьте ' + lowA.join(', ') +
+          '. Источники: болгарский перец, капуста брокколи, цитрусовые, орехи, цельные злаки, семена подсолнечника. ' +
+          'Антиоксиданты нужны для синтеза коллагена и защиты от свободных радикалов.');
+      } else {
+        out.push('Индекс старения ' + aging + '/10 при нормальном покрытии антиоксидантов: рассмотрите увеличение полифенолов (ягоды, зелёный чай) и жирных омега-3-содержащих рыб.');
+      }
+    }
+
+    // Нет высоких индексов, но есть запись — вернём краткий мониторинг
+    if (!out.length && (acne != null || aging != null)) {
+      var parts = [];
+      if (acne != null)  parts.push('акне ' + acne + '/10');
+      if (aging != null) parts.push('старение ' + aging + '/10');
+      out.push('Последний осмотр (' + UI.formatDate(last.date) + ', ' + dermZoneLabel(last.zone) + '): ' + parts.join(', ') +
+        '. Показатели в пределах нормы — продолжайте текущий рацион.');
+    }
+
+    return out;
   }
 
   /* ---- Profile Page ---- */
@@ -1512,7 +1810,7 @@ var NutriApp = (function() {
 
     screen.innerHTML =
       '<div class="auth-logo">N</div>' +
-      '<div class="auth-title">NutriCheck</div>' +
+      '<div class="auth-title">NutriForce</div>' +
       '<div class="auth-subtitle">Анализ питания студентов</div>' +
       '<div class="auth-form" id="auth-form">' +
         '<div id="auth-fields"></div>' +
@@ -1671,7 +1969,10 @@ var NutriApp = (function() {
     logout: logout,
     addProductModal: addProductModal,
     exportStudentWeek: exportStudentWeek,
-    exportStudentDoc: exportStudentDoc
+    exportStudentDoc: exportStudentDoc,
+    dermCreate: dermCreate,
+    dermCloseModal: dermCloseModal,
+    dermDelete: dermDelete
   };
 })();
 

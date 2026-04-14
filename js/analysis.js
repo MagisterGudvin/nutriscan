@@ -1,5 +1,5 @@
 /* ============================================
-   NutriCheck — Analysis Module (Norms Calculation)
+   NutriForce — Analysis Module (Norms Calculation)
    ============================================ */
 var NutriAnalysis = (function() {
   'use strict';

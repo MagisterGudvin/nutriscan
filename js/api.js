@@ -1,5 +1,5 @@
 /* ============================================
-   NutriCheck — API Module
+   NutriForce — API Module
    ============================================ */
 var NutriAPI = (function() {
   'use strict';

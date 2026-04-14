@@ -1,5 +1,5 @@
 /* ============================================
-   NutriCheck — Auth Module
+   NutriForce — Auth Module
    ============================================ */
 var NutriAuth = (function() {
   'use strict';

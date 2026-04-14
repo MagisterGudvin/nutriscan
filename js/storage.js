@@ -1,5 +1,5 @@
 /* ============================================
-   NutriCheck — Storage Module (GitHub JSON via Worker)
+   NutriForce — Storage Module (GitHub JSON via Worker)
    ============================================ */
 var NutriStorage = (function() {
   'use strict';
