@@ -211,31 +211,24 @@ function adaptAgentResponse(p) {
     sources: []
   };
 
-  // 1) Если агент уже отдал готовые totals — используем их
+  // 1) Если агент уже отдал готовые totals — копируем ВСЕ известные нутриенты
   if (p.totals && typeof p.totals === 'object') {
-    out.totals.calories = num(p.totals.calories);
-    out.totals.protein  = num(p.totals.protein);
-    out.totals.fat      = num(p.totals.fat);
-    out.totals.carbs    = num(p.totals.carbs);
-    if (p.totals.omega3 != null) out.totals.omega3 = num(p.totals.omega3);
-    if (p.totals.omega6 != null) out.totals.omega6 = num(p.totals.omega6);
+    ALL_NUTRIENT_KEYS.forEach(k => {
+      if (p.totals[k] != null) out.totals[k] = num(p.totals[k]);
+    });
   }
 
   // 2) Если есть детализация по блюдам — суммируем + собираем sources
   if (p.meals && typeof p.meals === 'object' && !Array.isArray(p.meals)) {
-    let sum = { calories: 0, protein: 0, fat: 0, carbs: 0, omega3: 0, omega6: 0 };
+    const sum = {};
+    ALL_NUTRIENT_KEYS.forEach(k => { sum[k] = 0; });
     let any = false;
     for (const meal of Object.values(p.meals)) {
       if (!Array.isArray(meal)) continue;
       for (const item of meal) {
         if (!item || typeof item !== 'object') continue;
         any = true;
-        sum.calories += num(item.calories);
-        sum.protein  += num(item.protein);
-        sum.fat      += num(item.fat);
-        sum.carbs    += num(item.carbs);
-        sum.omega3   += num(item.omega3);
-        sum.omega6   += num(item.omega6);
+        ALL_NUTRIENT_KEYS.forEach(k => { sum[k] += num(item[k]); });
         if (item.product) {
           let rawSrc = item.source || 'Оценка преподавателя';
           rawSrc = normalizeSourceLabel(rawSrc);
@@ -250,12 +243,17 @@ function adaptAgentResponse(p) {
       }
     }
     if (any && (!p.totals || !num(p.totals.calories))) {
+      // Макро — округляем до целого (калории/Б/Ж/У), омеги — до 0.01
       out.totals.calories = round(sum.calories);
-      out.totals.protein  = round(sum.protein);
-      out.totals.fat      = round(sum.fat);
-      out.totals.carbs    = round(sum.carbs);
-      out.totals.omega3   = round1(sum.omega3);
-      out.totals.omega6   = round1(sum.omega6);
+      out.totals.protein  = round1(sum.protein);
+      out.totals.fat      = round1(sum.fat);
+      out.totals.carbs    = round1(sum.carbs);
+      out.totals.omega3   = round2(sum.omega3);
+      out.totals.omega6   = round2(sum.omega6);
+      // Микро — всегда пишем, даже если 0 (чтобы UI рисовал норму)
+      MICRO_KEYS.forEach(k => {
+        out.totals[k] = round2(sum[k]);
+      });
     }
   }
 
@@ -354,6 +352,21 @@ function num(v) {
 }
 function round(v) { return Math.round(v); }
 function round1(v) { return Math.round(v * 10) / 10; }
+function round2(v) { return Math.round(v * 100) / 100; }
+
+/* Реестр нутриентов (должен быть синхронизирован с js/nutrients.js).
+   Держим здесь копию ключей — Worker изолирован от фронтовых модулей.
+   Ключи без calories/protein/fat/carbs/omega3/omega6 (они обрабатываются отдельно). */
+const MICRO_KEYS = [
+  'vit_c','vit_b1','vit_b2','vit_b6','niacin','vit_b12','folate',
+  'pantothenic','biotin','vit_a','beta_carotene','vit_e','vit_d','vit_k',
+  'calcium','phosphorus','magnesium','potassium','sodium','chloride',
+  'iron','zinc','iodine','copper','manganese','molybdenum','selenium',
+  'chromium','cobalt','fluoride','silicon','vanadium',
+  'inositol','l_carnitine','coq10','lipoic_acid','smm','orotic_acid','paba','choline'
+];
+const MACRO_KEYS = ['calories','protein','fat','carbs','omega3','omega6'];
+const ALL_NUTRIENT_KEYS = MACRO_KEYS.concat(MICRO_KEYS);
 
 
 function buildSystemPrompt() {
@@ -397,21 +410,50 @@ function buildSystemPrompt() {
     'Возвращай СТРОГО один JSON-объект, без markdown, без ```json, без текста вокруг.',
     'Все числа — числа (не строки). Все тексты — на русском.',
     '',
-    'Схема:',
+    'Схема ответа (все числовые поля — числа, не строки):',
     '{',
     '  "meals": {',
-    '    "breakfast": [ {"product":"...","portion_g":0,"calories":0,"protein":0,"fat":0,"carbs":0,"omega3":0,"omega6":0,"source":"Скурихин","detail":"табл. X, стр. Y"} ],',
+    '    "breakfast": [ {',
+    '      "product":"...", "portion_g":0,',
+    '      "calories":0, "protein":0, "fat":0, "carbs":0, "omega3":0, "omega6":0,',
+    '      "vit_c":0, "vit_b1":0, "vit_b2":0, "vit_b6":0, "niacin":0, "vit_b12":0,',
+    '      "folate":0, "pantothenic":0, "biotin":0, "vit_a":0, "beta_carotene":0,',
+    '      "vit_e":0, "vit_d":0, "vit_k":0,',
+    '      "calcium":0, "phosphorus":0, "magnesium":0, "potassium":0, "sodium":0, "chloride":0,',
+    '      "iron":0, "zinc":0, "iodine":0, "copper":0, "manganese":0, "molybdenum":0,',
+    '      "selenium":0, "chromium":0, "cobalt":0, "fluoride":0, "silicon":0, "vanadium":0,',
+    '      "inositol":0, "l_carnitine":0, "coq10":0, "lipoic_acid":0, "smm":0,',
+    '      "orotic_acid":0, "paba":0, "choline":0,',
+    '      "source":"Скурихин", "detail":"табл. X, стр. Y"',
+    '    } ],',
     '    "lunch":  [],',
     '    "snack":  [],',
     '    "dinner": []',
     '  },',
-    '  "totals": {"calories":0,"protein":0,"fat":0,"carbs":0,"omega3":0,"omega6":0},',
+    '  "totals": { /* суммы по всем полям выше */ },',
     '  "deficits":        ["..."],',
     '  "imbalances":      ["..."],',
     '  "recommendations": ["...","...","..."]',
     '}',
     '',
-    'Никаких лишних полей сверх схемы (никаких amino_acids, vitamins, norms, code).'
+    '=== ЕДИНИЦЫ ИЗМЕРЕНИЯ ===',
+    'calories — ккал; protein/fat/carbs — г; omega3/omega6 — г.',
+    'мг:  vit_c, vit_b1, vit_b2, vit_b6, niacin, pantothenic, beta_carotene, vit_e,',
+    '     calcium, phosphorus, magnesium, potassium, sodium, chloride, iron, zinc,',
+    '     copper, manganese, fluoride, silicon,',
+    '     inositol, l_carnitine, coq10, lipoic_acid, smm, orotic_acid, paba, choline.',
+    'мкг: vit_b12, folate, biotin, vit_a (РЭ), vit_d, vit_k,',
+    '     iodine, molybdenum, selenium, chromium, cobalt, vanadium.',
+    '',
+    '=== ПРАВИЛА ДЛЯ МИКРОНУТРИЕНТОВ ===',
+    '- Все значения — абсолютные за ПОРЦИЮ (portion_g), НЕ на 100 г.',
+    '- Если в таблицах Скурихина нет данных по какому-то микронутриенту для данного',
+    '  продукта — ставь 0 (не выдумывай). Для витаминоподобных веществ (коэнзим Q10,',
+    '  липоевая кислота, оротовая кислота, paba, smm, l_carnitine, inositol) в обычных',
+    '  продуктах часто 0 — это нормально.',
+    '- Не пропускай поля: в каждом продукте должны присутствовать ВСЕ ключи из схемы.',
+    '',
+    'Никаких лишних полей сверх схемы (никаких amino_acids, norms, code).'
   ].join('\n');
 }
 

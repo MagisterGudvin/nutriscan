@@ -51,7 +51,7 @@ var NutriAnalysis = (function() {
     var carbsCal = Math.max(0, calories - proteinCal - fatCal);
     var carbs = Math.round(carbsCal / 4);
 
-    return {
+    var norms = {
       calories: calories,
       protein: protein,
       fat: fat,
@@ -62,6 +62,17 @@ var NutriAnalysis = (function() {
       tdee: tdee,
       goal: goal
     };
+
+    // Микронутриенты — берём адекватное суточное потребление из реестра.
+    // Если реестр ещё не загружен (на всякий случай) — пропускаем.
+    if (typeof NutriList !== 'undefined' && NutriList.defaultMicroNorms) {
+      var micro = NutriList.defaultMicroNorms();
+      for (var k in micro) {
+        if (norms[k] == null) norms[k] = micro[k];
+      }
+    }
+
+    return norms;
   }
 
   function recalcUserNorms(userId) {

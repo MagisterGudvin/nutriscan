@@ -157,6 +157,21 @@ var NutriDocx = (function() {
       ]));
     }
 
+    // Микронутриенты — добавляем строки из реестра
+    if (typeof NutriList !== 'undefined') {
+      var micros = NutriList.LIST.filter(function(x) { return x.group !== 'macro'; });
+      micros.forEach(function(m) {
+        var val = n[m.key];
+        if (val == null) val = m.norm;
+        if (val == null) return;
+        rows.push(tableRow([
+          { text: m.label + ', ' + m.unit },
+          { text: NutriList.format(m.key, val), bold: true, color: '#16a34a' },
+          { text: 'Адекватное суточное потребление', size: 20, color: '#64748b' }
+        ]));
+      });
+    }
+
     out += table(rows);
     out += para('', { spacing: 100 });
     return out;
@@ -185,6 +200,14 @@ var NutriDocx = (function() {
     ];
     if (norms.omega3 != null) metrics.push({ label: 'Омега-3, г', key: 'omega3' });
     if (norms.omega6 != null) metrics.push({ label: 'Омега-6, г', key: 'omega6' });
+
+    // Добавляем все микронутриенты из реестра
+    if (typeof NutriList !== 'undefined') {
+      NutriList.LIST.forEach(function(n) {
+        if (n.group === 'macro') return;
+        metrics.push({ label: n.label + ', ' + n.unit, key: n.key });
+      });
+    }
 
     metrics.forEach(function(m) {
       var val = Number(totals[m.key]) || 0;

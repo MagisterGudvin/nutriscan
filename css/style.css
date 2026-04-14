@@ -1347,6 +1347,59 @@ img { max-width: 100%; display: block; }
 
 .confirm-dialog__actions .btn { flex: 1; }
 
+/* --- Micronutrients table --- */
+.micro-group {
+  padding: var(--s-4);
+}
+.micro-group summary {
+  cursor: pointer;
+  list-style: none;
+  padding: var(--s-2) 0;
+  user-select: none;
+  position: relative;
+  padding-right: var(--s-6);
+}
+.micro-group summary::-webkit-details-marker { display: none; }
+.micro-group summary::after {
+  content: '▸';
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  transition: transform var(--t-fast);
+  color: var(--c-text-secondary);
+}
+.micro-group[open] summary::after {
+  transform: translateY(-50%) rotate(90deg);
+}
+.micro-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: var(--s-3);
+  font-size: var(--fs-sm);
+}
+.micro-table th,
+.micro-table td {
+  text-align: left;
+  padding: var(--s-2) var(--s-3);
+  border-bottom: 1px solid var(--c-border-light);
+}
+.micro-table th {
+  font-weight: 600;
+  color: var(--c-text-secondary);
+  font-size: var(--fs-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.micro-table td.num,
+.micro-table th:nth-child(n+2) {
+  text-align: right;
+  white-space: nowrap;
+}
+.micro-row--ok  td:last-child { color: var(--c-primary); font-weight: 600; }
+.micro-row--warn td:last-child { color: #d97706; font-weight: 600; }
+.micro-row--bad  td:last-child { color: #dc2626; font-weight: 600; }
+
 /* Detail report view */
 .detail-section {
   margin-bottom: var(--s-5);

@@ -491,6 +491,34 @@ var NutriApp = (function() {
 
     html += '</div>';
 
+    // Микронутриенты — группами (витамины / минералы / витаминоподобные)
+    if (typeof NutriList !== 'undefined') {
+      var groups = [
+        { key: 'vitamin', title: 'Витамины' },
+        { key: 'mineral', title: 'Минералы' },
+        { key: 'other',   title: 'Витаминоподобные и условно-незаменимые' }
+      ];
+      groups.forEach(function(g) {
+        var items = NutriList.byGroup(g.key);
+        if (!items.length) return;
+        html += '<details class="card mb-4 micro-group"><summary class="card__title">' + g.title + '</summary>';
+        html += '<table class="micro-table"><thead><tr><th>Нутриент</th><th>Факт</th><th>Норма</th><th>%</th></tr></thead><tbody>';
+        items.forEach(function(n) {
+          var val = report.totals[n.key] != null ? +report.totals[n.key] : 0;
+          var norm = report.norms && report.norms[n.key] != null ? +report.norms[n.key] : (n.norm || 0);
+          var pct = norm ? Math.round(val / norm * 100) : 0;
+          var cls = pct >= 80 && pct <= 130 ? 'ok' : (pct >= 50 ? 'warn' : 'bad');
+          html += '<tr class="micro-row micro-row--' + cls + '">' +
+            '<td>' + escHtml(n.label) + '</td>' +
+            '<td class="num">' + NutriList.format(n.key, val) + ' ' + escHtml(n.unit) + '</td>' +
+            '<td class="num">' + NutriList.format(n.key, norm) + ' ' + escHtml(n.unit) + '</td>' +
+            '<td class="num">' + pct + '%</td>' +
+          '</tr>';
+        });
+        html += '</tbody></table></details>';
+      });
+    }
+
     // Deficits
     if (report.deficits && report.deficits.length) {
       html += '<div class="detail-section">' +
