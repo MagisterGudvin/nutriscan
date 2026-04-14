@@ -866,84 +866,138 @@ var NutriApp = (function() {
   function dermDeviceLabel(v) { var x = DERM_DEVICES.find(function(z){return z.v===v;}); return x ? x.l : v; }
   function dermExamLabel(v) { var x = DERM_EXAMS.find(function(z){return z.v===v;}); return x ? x.l : v; }
 
+  /* Рендер карточки дерматологической записи.
+     editable=true — показать кнопки редактирования (только для преподавателя).
+     targetUserId — чей профиль (нужен преподавателю для редактирования). */
+  function renderDermRecordCard(r, editable, targetUserId) {
+    var imgCount = (r.images || []).length;
+    var thumb = imgCount ? '<img class="derm-thumb" src="' + r.images[0] + '" alt="">' : '<div class="derm-thumb derm-thumb--empty">\ud83d\udd2c</div>';
+    var actions = '';
+    if (editable) {
+      actions =
+        '<div class="derm-card__actions">' +
+          '<button class="btn btn--sm btn--secondary" onclick="NutriApp.dermEditRecord(\'' + escAttr(targetUserId) + '\',\'' + escAttr(r.id) + '\')">\u270f</button>' +
+          '<button class="btn btn--sm btn--ghost" onclick="NutriApp.dermDeleteRecord(\'' + escAttr(targetUserId) + '\',\'' + escAttr(r.id) + '\')">\ud83d\uddd1</button>' +
+        '</div>';
+    }
+    return '<div class="card mb-3 derm-card" data-id="' + escAttr(r.id) + '">' +
+      '<div class="derm-card__row">' +
+        thumb +
+        '<div class="derm-card__body">' +
+          '<div class="derm-card__title">' + escHtml(dermZoneLabel(r.zone)) + '</div>' +
+          '<div class="derm-card__meta">' + escHtml(UI.formatDate(r.date)) + (r.time ? ', ' + escHtml(r.time) : '') + '</div>' +
+          '<div class="derm-card__meta">' + escHtml(dermDeviceLabel(r.device)) + ' · ' + escHtml(dermExamLabel(r.exam)) + '</div>' +
+          (r.acneIndex != null || r.agingIndex != null
+            ? '<div class="derm-card__idx">' +
+                (r.acneIndex != null ? '<span class="derm-idx derm-idx--acne">Акне: ' + r.acneIndex + '/10</span>' : '') +
+                (r.agingIndex != null ? '<span class="derm-idx derm-idx--aging">Старение: ' + r.agingIndex + '/10</span>' : '') +
+              '</div>' : '') +
+          (imgCount > 1 ? '<div class="derm-card__meta text-xs">+' + (imgCount - 1) + ' фото</div>' : '') +
+        '</div>' +
+        actions +
+      '</div>' +
+      (r.notes ? '<div class="derm-card__notes"><b>Заметки врача:</b> ' + escHtml(r.notes) + '</div>' : '') +
+      (r.teacherComment ? '<div class="derm-card__notes derm-card__notes--comment"><b>Комментарий преподавателя:</b> ' + escHtml(r.teacherComment) + '</div>' : '') +
+    '</div>';
+  }
+
+  /* Страница «Кожа» для СТУДЕНТА: read-only профиль от преподавателя + опрос. */
   function renderDermPage() {
     var user = NutriAuth.currentUser();
     var records = (user.dermatoscopy || []).slice().sort(function(a,b) {
-      return (b.date + b.time).localeCompare(a.date + a.time);
+      return (b.date + (b.time||'')).localeCompare(a.date + (a.time||''));
+    });
+    var surveys = (user.skinSurveys || []).slice().sort(function(a,b) {
+      return (b.date + (b.time||'')).localeCompare(a.date + (a.time||''));
     });
 
-    updateHeader('Дерматоскопия', 'Мониторинг состояния кожи',
+    updateHeader('Состояние кожи', 'Дерматологический профиль и самоопрос',
       '<button class="btn btn--logout" title="Выйти" aria-label="Выйти" onclick="NutriApp.logout()">' + LOGOUT_ICON + '</button>');
 
     var html = '';
-    html += '<button class="btn btn--primary btn--lg mb-4" style="width:100%" onclick="NutriApp.dermCreate()">+ Новая дерматоскопическая запись</button>';
 
+    // --- Дерматологический профиль (от преподавателя, read-only) ---
+    html += '<div class="section-title">Дерматологический профиль</div>';
     if (!records.length) {
       html += '<div class="card"><div class="empty-state">' +
-        '<div class="empty-state__icon">\ud83d\udd2c</div>' +
-        '<div class="empty-state__title">Нет записей</div>' +
-        '<div class="empty-state__text">Создайте первую запись — зона, дата, дерматоскоп и изображения.</div>' +
+        '<div class="empty-state__icon">\ud83e\ude7a</div>' +
+        '<div class="empty-state__title">Профиль не заполнен</div>' +
+        '<div class="empty-state__text">Преподаватель ещё не вносил данные дерматоскопического осмотра. Профиль появится здесь после первого приёма.</div>' +
       '</div></div>';
     } else {
       records.forEach(function(r) {
-        var imgCount = (r.images || []).length;
-        var thumb = imgCount ? '<img class="derm-thumb" src="' + r.images[0] + '" alt="">' : '<div class="derm-thumb derm-thumb--empty">\ud83d\udd2c</div>';
-        html += '<div class="card mb-3 derm-card" data-id="' + escAttr(r.id) + '">' +
-          '<div class="derm-card__row">' +
-            thumb +
-            '<div class="derm-card__body">' +
-              '<div class="derm-card__title">' + escHtml(dermZoneLabel(r.zone)) + '</div>' +
-              '<div class="derm-card__meta">' + escHtml(UI.formatDate(r.date)) + (r.time ? ', ' + escHtml(r.time) : '') + '</div>' +
-              '<div class="derm-card__meta">' + escHtml(dermDeviceLabel(r.device)) + ' · ' + escHtml(dermExamLabel(r.exam)) + '</div>' +
-              (r.acneIndex != null || r.agingIndex != null
-                ? '<div class="derm-card__idx">' +
-                    (r.acneIndex != null ? '<span class="derm-idx derm-idx--acne">Акне: ' + r.acneIndex + '/10</span>' : '') +
-                    (r.agingIndex != null ? '<span class="derm-idx derm-idx--aging">Старение: ' + r.agingIndex + '/10</span>' : '') +
-                  '</div>' : '') +
-              (imgCount > 1 ? '<div class="derm-card__meta text-xs">+' + (imgCount - 1) + ' фото</div>' : '') +
-            '</div>' +
-            '<button class="btn btn--sm btn--secondary" onclick="NutriApp.dermDelete(\'' + escAttr(r.id) + '\')">\ud83d\uddd1</button>' +
-          '</div>' +
-          (r.notes ? '<div class="derm-card__notes">' + escHtml(r.notes) + '</div>' : '') +
-        '</div>';
+        html += renderDermRecordCard(r, false, user.id);
+      });
+    }
+
+    // --- Самоопрос состояния кожи ---
+    html += '<div class="section-title mt-5">Опрос состояния кожи</div>';
+    html += '<button class="btn btn--primary btn--lg mb-3" style="width:100%" onclick="NutriApp.skinSurveyStart()">\ud83d\udcdd Пройти опрос</button>';
+    html += '<div class="text-xs text-secondary mb-4">Заполняйте опрос регулярно — ответы используются для рекомендаций по питанию и для преподавателя.</div>';
+
+    if (surveys.length) {
+      html += '<div class="section-title">История опросов</div>';
+      surveys.forEach(function(s) {
+        html += renderSurveyCard(s, false, user.id);
       });
     }
 
     $('#page-derm').innerHTML = html;
   }
 
-  function dermCreate() {
+  /* Универсальная форма дерматологической записи.
+     targetUserId — id студента, чей профиль редактируется.
+     existingId   — если задан, редактируем существующую запись.
+     Форма используется преподавателем; студент к ней доступа не имеет. */
+  function dermOpenForm(targetUserId, existingId) {
+    var target = NutriDB.findUserById(targetUserId);
+    if (!target) { NutriUI.toast('Студент не найден', 'error'); return; }
+
+    var existing = null;
+    if (existingId) {
+      existing = (target.dermatoscopy || []).find(function(r) { return r.id === existingId; });
+    }
+
     var now = new Date();
     var pad = function(n) { return n < 10 ? '0' + n : '' + n; };
-    var today = now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate());
-    var nowTime = pad(now.getHours()) + ':' + pad(now.getMinutes());
+    var defDate = existing ? existing.date : (now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate()));
+    var defTime = existing ? (existing.time || '') : (pad(now.getHours()) + ':' + pad(now.getMinutes()));
 
-    var zoneOpts = DERM_ZONES.map(function(z) { return '<option value="' + z.v + '">' + z.l + '</option>'; }).join('');
-    var devOpts  = DERM_DEVICES.map(function(z) { return '<option value="' + z.v + '">' + z.l + '</option>'; }).join('');
-    var examOpts = DERM_EXAMS.map(function(z) { return '<option value="' + z.v + '">' + z.l + '</option>'; }).join('');
+    var mkOpts = function(list, sel) {
+      return list.map(function(z) {
+        return '<option value="' + z.v + '"' + (z.v === sel ? ' selected' : '') + '>' + z.l + '</option>';
+      }).join('');
+    };
+    var zoneOpts = mkOpts(DERM_ZONES,   existing && existing.zone);
+    var devOpts  = mkOpts(DERM_DEVICES, existing && existing.device);
+    var examOpts = mkOpts(DERM_EXAMS,   existing && existing.exam);
 
     var gridStyle = 'display:grid;grid-template-columns:1fr 1fr;gap:var(--s-3)';
+    var title = existing ? 'Редактирование записи' : 'Новая дерматологическая запись';
     var content =
-      '<div class="modal__title">Новая дерматоскопическая запись</div>' +
+      '<div class="modal__title">' + title + '</div>' +
+      '<div class="text-sm text-secondary mb-3">Студент: ' + escHtml(target.name) + '</div>' +
       '<div class="input-group"><label class="input-label">Зона тела</label>' +
         '<select class="input" id="derm-zone">' + zoneOpts + '</select></div>' +
       '<div style="' + gridStyle + '">' +
-        '<div class="input-group"><label class="input-label">Дата</label><input class="input" type="date" id="derm-date" value="' + today + '"></div>' +
-        '<div class="input-group"><label class="input-label">Время</label><input class="input" type="time" id="derm-time" value="' + nowTime + '"></div>' +
+        '<div class="input-group"><label class="input-label">Дата</label><input class="input" type="date" id="derm-date" value="' + escAttr(defDate) + '"></div>' +
+        '<div class="input-group"><label class="input-label">Время</label><input class="input" type="time" id="derm-time" value="' + escAttr(defTime) + '"></div>' +
       '</div>' +
       '<div class="input-group"><label class="input-label">Тип дерматоскопа</label>' +
         '<select class="input" id="derm-device">' + devOpts + '</select></div>' +
       '<div class="input-group"><label class="input-label">Тип осмотра</label>' +
         '<select class="input" id="derm-exam">' + examOpts + '</select></div>' +
       '<div style="' + gridStyle + '">' +
-        '<div class="input-group"><label class="input-label">Индекс акне (0-10)</label><input class="input" type="number" min="0" max="10" step="0.5" id="derm-acne" placeholder="—"></div>' +
-        '<div class="input-group"><label class="input-label">Индекс старения (0-10)</label><input class="input" type="number" min="0" max="10" step="0.5" id="derm-aging" placeholder="—"></div>' +
+        '<div class="input-group"><label class="input-label">Индекс акне (0-10)</label><input class="input" type="number" min="0" max="10" step="0.5" id="derm-acne" placeholder="—" value="' + (existing && existing.acneIndex != null ? existing.acneIndex : '') + '"></div>' +
+        '<div class="input-group"><label class="input-label">Индекс старения (0-10)</label><input class="input" type="number" min="0" max="10" step="0.5" id="derm-aging" placeholder="—" value="' + (existing && existing.agingIndex != null ? existing.agingIndex : '') + '"></div>' +
       '</div>' +
-      '<div class="input-group"><label class="input-label">Заметки</label>' +
-        '<textarea class="input" id="derm-notes" rows="3" placeholder="Жалобы, клиническая картина, субъективное состояние…"></textarea></div>' +
-      '<div class="input-group"><label class="input-label">Фото / видео с дерматоскопа</label>' +
-        '<input type="file" id="derm-files" accept="image/*,video/*" multiple>' +
-        '<div class="text-xs text-secondary mt-1">Фото сжимаются до 1600 пикс. по длинной стороне. Видео-файлы пока не сохраняются.</div>' +
+      '<div class="input-group"><label class="input-label">Клинические заметки (видит студент)</label>' +
+        '<textarea class="input" id="derm-notes" rows="3" placeholder="Жалобы, клиническая картина…">' + escHtml((existing && existing.notes) || '') + '</textarea></div>' +
+      '<div class="input-group"><label class="input-label">Комментарий преподавателя (видит студент)</label>' +
+        '<textarea class="input" id="derm-comment" rows="3" placeholder="Рекомендации, назначения, пояснения…">' + escHtml((existing && existing.teacherComment) || '') + '</textarea></div>' +
+      '<div class="input-group"><label class="input-label">Фото с дерматоскопа</label>' +
+        '<input type="file" id="derm-files" accept="image/*" multiple>' +
+        '<div class="text-xs text-secondary mt-1">Сжимаются до 1600 px (JPEG). Уже сохранённые фото останутся на месте.</div>' +
         '<div id="derm-preview" class="derm-preview"></div>' +
       '</div>' +
       '<div style="display:flex;gap:var(--s-3);margin-top:var(--s-4)">' +
@@ -953,12 +1007,18 @@ var NutriApp = (function() {
 
     var modalHandle = NutriUI.showModal(content);
     dermModalHandle = modalHandle;
-
     $('#derm-cancel-btn').addEventListener('click', function() { modalHandle.close(); });
 
-    var images = [];
-    var filesInput = $('#derm-files');
-    filesInput.addEventListener('change', function(e) {
+    var images = existing && Array.isArray(existing.images) ? existing.images.slice() : [];
+    // Отрисуем уже имеющиеся превью
+    images.forEach(function(dataUrl) {
+      var img = document.createElement('img');
+      img.src = dataUrl;
+      img.className = 'derm-preview__img';
+      $('#derm-preview').appendChild(img);
+    });
+
+    $('#derm-files').addEventListener('change', function(e) {
       var files = Array.from(e.target.files || []);
       files.forEach(function(f) {
         if (!f.type.startsWith('image/')) return;
@@ -975,35 +1035,41 @@ var NutriApp = (function() {
     });
 
     $('#derm-save-btn').addEventListener('click', function() {
+      var base = existing || {};
       var record = {
-        id: 'd_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+        id: existing ? existing.id : ('d_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7)),
         zone: $('#derm-zone').value,
         date: $('#derm-date').value,
         time: $('#derm-time').value,
         device: $('#derm-device').value,
         exam: $('#derm-exam').value,
         notes: $('#derm-notes').value.trim(),
+        teacherComment: $('#derm-comment').value.trim(),
         images: images,
-        createdAt: new Date().toISOString()
+        createdAt: base.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString()
       };
       var a = $('#derm-acne').value;
       var g = $('#derm-aging').value;
       if (a !== '') record.acneIndex = parseFloat(a);
       if (g !== '') record.agingIndex = parseFloat(g);
 
-      if (!record.date) {
-        NutriUI.toast('Укажите дату осмотра', 'error');
-        return;
+      if (!record.date) { NutriUI.toast('Укажите дату осмотра', 'error'); return; }
+
+      var list = (target.dermatoscopy || []).slice();
+      if (existing) {
+        var idx = list.findIndex(function(r) { return r.id === existing.id; });
+        if (idx >= 0) list[idx] = record; else list.push(record);
+      } else {
+        list.push(record);
       }
 
-      var user = NutriAuth.currentUser();
-      var list = (user.dermatoscopy || []).slice();
-      list.push(record);
-
-      NutriDB.updateUser(user.id, { dermatoscopy: list }).then(function() {
-        NutriUI.toast('Запись сохранена', 'success');
+      NutriDB.updateUser(targetUserId, { dermatoscopy: list }).then(function() {
+        NutriUI.toast('Сохранено', 'success');
         modalHandle.close();
-        renderDermPage();
+        // Ре-рендер соответствующей страницы
+        if (currentPage === 'student-detail') renderStudentDetailPage();
+        else if (currentPage === 'derm') renderDermPage();
       }).catch(function(err) {
         NutriUI.toast('Не удалось сохранить: ' + err.message, 'error');
       });
@@ -1015,15 +1081,169 @@ var NutriApp = (function() {
     if (dermModalHandle) { dermModalHandle.close(); dermModalHandle = null; }
   }
 
-  function dermDelete(id) {
+  function dermEditRecord(userId, recId) { dermOpenForm(userId, recId); }
+  function dermNewRecord(userId) { dermOpenForm(userId, null); }
+
+  function dermDeleteRecord(userId, recId) {
     if (!confirm('Удалить запись?')) return;
-    var user = NutriAuth.currentUser();
-    var list = (user.dermatoscopy || []).filter(function(r) { return r.id !== id; });
-    NutriDB.updateUser(user.id, { dermatoscopy: list }).then(function() {
+    var target = NutriDB.findUserById(userId);
+    if (!target) return;
+    var list = (target.dermatoscopy || []).filter(function(r) { return r.id !== recId; });
+    NutriDB.updateUser(userId, { dermatoscopy: list }).then(function() {
       NutriUI.toast('Удалено', 'success');
-      renderDermPage();
+      if (currentPage === 'student-detail') renderStudentDetailPage();
+      else if (currentPage === 'derm') renderDermPage();
     }).catch(function(err) {
       NutriUI.toast('Ошибка: ' + err.message, 'error');
+    });
+  }
+
+  /* ======================================================
+     Опрос состояния кожи (синтез DLQI / ItchyQoL / PSM-25 / SF-36).
+     15 вопросов, шкала 0-4. Результаты агрегируются в индексы
+     0-10 и участвуют в анализе «кожа ↔ питание».
+     ====================================================== */
+  var SKIN_SURVEY = [
+    { key: 'q1',  axis: 'dryness',   text: 'Насколько выражена сухость / шелушение кожи за последние 2 недели?' },
+    { key: 'q2',  axis: 'seborrhea', text: 'Насколько выражена жирность кожи, блеск, расширенные поры?' },
+    { key: 'q3',  axis: 'acne',      text: 'Насколько выражены высыпания (воспаления, комедоны, прыщи)?' },
+    { key: 'q4',  axis: 'itch',      text: 'Насколько сильно беспокоит зуд, жжение, покалывание?' },
+    { key: 'q5',  axis: 'aging',     text: 'Как Вы оцениваете признаки старения (морщины, потеря упругости, тусклость)?' },
+    { key: 'q6',  axis: 'qol',       text: 'Насколько Вы смущаетесь или переживаете из-за состояния своей кожи?' },
+    { key: 'q7',  axis: 'qol',       text: 'Насколько состояние кожи мешает учёбе / работе?' },
+    { key: 'q8',  axis: 'qol',       text: 'Насколько состояние кожи ограничивает Вас в выборе одежды, косметики, процедур?' },
+    { key: 'q9',  axis: 'qol',       text: 'Насколько беспокоит физический дискомфорт кожи (стянутость, боль)?' },
+    { key: 'q10', axis: 'qol',       text: 'Насколько состояние кожи мешает общению с людьми?' },
+    { key: 'q11', axis: 'qol',       text: 'Насколько состояние кожи влияет на Ваш сон?' },
+    { key: 'q12', axis: 'qol',       text: 'Насколько состояние кожи ухудшает Ваше настроение, провоцирует тревогу?' },
+    { key: 'q13', axis: 'qol',       text: 'Насколько ощутимы затраты времени и денег на уход за кожей?' },
+    { key: 'q14', axis: 'qol',       text: 'Как часто окружающие обращают внимание на состояние или возраст Вашей кожи?' },
+    { key: 'q15', axis: 'qol',       text: 'В целом, насколько состояние кожи ухудшает качество Вашей жизни?' }
+  ];
+  var SKIN_SURVEY_LABELS = ['Нет / никогда', 'Слабо / редко', 'Умеренно / иногда', 'Сильно / часто', 'Очень сильно / постоянно'];
+
+  function computeSurveyIndices(answers) {
+    var dry = +answers[0] || 0;
+    var seb = +answers[1] || 0;
+    var acn = +answers[2] || 0;
+    var itc = +answers[3] || 0;
+    var age = +answers[4] || 0;
+    var qolSum = 0, qolN = 0;
+    for (var i = 5; i < 15; i++) { qolSum += (+answers[i] || 0); qolN++; }
+    var qol = qolN ? (qolSum / qolN) : 0;
+    // Шкала 0-4 → 0-10
+    var to10 = function(v) { return Math.round(v * 2.5 * 10) / 10; };
+    return {
+      dryness:   to10(dry),
+      seborrhea: to10(seb),
+      acne:      to10(acn),
+      itch:      to10(itc),
+      aging:     to10(age),
+      qol:       to10(qol)
+    };
+  }
+
+  function renderSurveyCard(s, editable, targetUserId) {
+    var idx = s.indices || {};
+    var pill = function(label, val) {
+      if (val == null) return '';
+      var cls = val >= 6 ? 'derm-idx--acne' : (val >= 3 ? 'derm-idx--aging' : '');
+      return '<span class="derm-idx ' + cls + '">' + label + ': ' + val + '/10</span>';
+    };
+    var actions = '';
+    if (editable) {
+      actions =
+        '<div class="derm-card__actions">' +
+          '<button class="btn btn--sm btn--ghost" onclick="NutriApp.skinSurveyDelete(\'' + escAttr(targetUserId) + '\',\'' + escAttr(s.id) + '\')">\ud83d\uddd1</button>' +
+        '</div>';
+    }
+    return '<div class="card mb-3 derm-card" data-id="' + escAttr(s.id) + '">' +
+      '<div class="derm-card__row">' +
+        '<div class="derm-thumb derm-thumb--empty">\ud83d\udcdd</div>' +
+        '<div class="derm-card__body">' +
+          '<div class="derm-card__title">Опрос состояния кожи</div>' +
+          '<div class="derm-card__meta">' + escHtml(UI.formatDate(s.date)) + (s.time ? ', ' + escHtml(s.time) : '') + '</div>' +
+          '<div class="derm-card__idx">' +
+            pill('Сухость',   idx.dryness) +
+            pill('Жирность',  idx.seborrhea) +
+            pill('Акне',      idx.acne) +
+            pill('Зуд',       idx.itch) +
+            pill('Старение',  idx.aging) +
+            pill('КЖ',        idx.qol) +
+          '</div>' +
+        '</div>' +
+        actions +
+      '</div>' +
+    '</div>';
+  }
+
+  function skinSurveyStart() {
+    var user = NutriAuth.currentUser();
+    if (!user) return;
+
+    var rows = SKIN_SURVEY.map(function(q, i) {
+      var opts = SKIN_SURVEY_LABELS.map(function(lbl, v) {
+        return '<label class="survey-opt"><input type="radio" name="' + q.key + '" value="' + v + '"' + (v === 0 ? ' checked' : '') + '><span>' + v + ' — ' + escHtml(lbl) + '</span></label>';
+      }).join('');
+      return '<div class="survey-q">' +
+        '<div class="survey-q__title">' + (i + 1) + '. ' + escHtml(q.text) + '</div>' +
+        '<div class="survey-q__opts">' + opts + '</div>' +
+      '</div>';
+    }).join('');
+
+    var content =
+      '<div class="modal__title">Опрос состояния кожи</div>' +
+      '<div class="text-sm text-secondary mb-3">Отметьте в баллах (0 — нет, 4 — очень сильно). 15 вопросов.</div>' +
+      '<div class="survey-form">' + rows + '</div>' +
+      '<div style="display:flex;gap:var(--s-3);margin-top:var(--s-4)">' +
+        '<button class="btn btn--secondary" id="survey-cancel" style="flex:1">Отмена</button>' +
+        '<button class="btn btn--primary" id="survey-save" style="flex:1">Сохранить</button>' +
+      '</div>';
+
+    var h = NutriUI.showModal(content);
+    $('#survey-cancel').addEventListener('click', function() { h.close(); });
+    $('#survey-save').addEventListener('click', function() {
+      var answers = SKIN_SURVEY.map(function(q) {
+        var sel = document.querySelector('input[name="' + q.key + '"]:checked');
+        return sel ? parseInt(sel.value, 10) : 0;
+      });
+      skinSurveySave(answers, h);
+    });
+  }
+
+  function skinSurveySave(answers, modalHandle) {
+    var user = NutriAuth.currentUser();
+    if (!user) return;
+    var now = new Date();
+    var pad = function(n) { return n < 10 ? '0' + n : '' + n; };
+    var survey = {
+      id: 's_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+      date: now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate()),
+      time: pad(now.getHours()) + ':' + pad(now.getMinutes()),
+      answers: answers,
+      indices: computeSurveyIndices(answers),
+      createdAt: now.toISOString()
+    };
+    var list = (user.skinSurveys || []).slice();
+    list.push(survey);
+    NutriDB.updateUser(user.id, { skinSurveys: list }).then(function() {
+      NutriUI.toast('Опрос сохранён', 'success');
+      if (modalHandle) modalHandle.close();
+      if (currentPage === 'derm') renderDermPage();
+    }).catch(function(err) {
+      NutriUI.toast('Не удалось сохранить: ' + err.message, 'error');
+    });
+  }
+
+  function skinSurveyDelete(userId, surveyId) {
+    if (!confirm('Удалить результат опроса?')) return;
+    var target = NutriDB.findUserById(userId);
+    if (!target) return;
+    var list = (target.skinSurveys || []).filter(function(s) { return s.id !== surveyId; });
+    NutriDB.updateUser(userId, { skinSurveys: list }).then(function() {
+      NutriUI.toast('Удалено', 'success');
+      if (currentPage === 'student-detail') renderStudentDetailPage();
+      else if (currentPage === 'derm') renderDermPage();
     });
   }
 
@@ -1061,11 +1281,24 @@ var NutriApp = (function() {
   function computeSkinRecommendations(totals, norms, user) {
     if (!user || !totals || !norms) return [];
     var records = user.dermatoscopy || [];
-    if (!records.length) return [];
-    var last = records.slice().sort(function(a, b) {
+    var surveys = user.skinSurveys || [];
+    if (!records.length && !surveys.length) return [];
+
+    var last = records.length ? records.slice().sort(function(a, b) {
       return (b.date + (b.time||'')).localeCompare(a.date + (a.time||''));
-    })[0];
-    if (!last) return [];
+    })[0] : null;
+
+    var lastSurvey = surveys.length ? surveys.slice().sort(function(a, b) {
+      return (b.date + (b.time||'')).localeCompare(a.date + (a.time||''));
+    })[0] : null;
+    var sIdx = (lastSurvey && lastSurvey.indices) || {};
+
+    var pickMax = function(a, b) {
+      if (a == null && b == null) return null;
+      if (a == null) return b;
+      if (b == null) return a;
+      return Math.max(a, b);
+    };
 
     var out = [];
     var cover = function(k) {
@@ -1073,8 +1306,12 @@ var NutriApp = (function() {
       return n ? v / n : 1;
     };
 
-    var acne  = last.acneIndex;
-    var aging = last.agingIndex;
+    var acne      = pickMax(last && last.acneIndex,  sIdx.acne);
+    var aging     = pickMax(last && last.agingIndex, sIdx.aging);
+    var dryness   = sIdx.dryness   != null ? sIdx.dryness   : null;
+    var seborrhea = sIdx.seborrhea != null ? sIdx.seborrhea : null;
+    var itch      = sIdx.itch      != null ? sIdx.itch      : null;
+    var qol       = sIdx.qol       != null ? sIdx.qol       : null;
 
     if (acne != null && acne >= 5) {
       var low = [];
@@ -1105,13 +1342,61 @@ var NutriApp = (function() {
       }
     }
 
-    // Нет высоких индексов, но есть запись — вернём краткий мониторинг
-    if (!out.length && (acne != null || aging != null)) {
+    if (dryness != null && dryness >= 5) {
+      var lowD = [];
+      if (cover('omega3') < 0.8) lowD.push('омега-3');
+      if (cover('omega6') < 0.8) lowD.push('омега-6');
+      if (cover('vit_e') < 0.8)  lowD.push('витамин E');
+      if (cover('vit_a') < 0.8)  lowD.push('витамин A');
+      if (lowD.length) {
+        out.push('Сухость кожи ' + dryness + '/10: повысьте ' + lowD.join(', ') +
+          '. Источники: жирная рыба, льняное и оливковое масло, орехи, авокадо, яичный желток. ' +
+          'ПНЖК и жирорастворимые витамины поддерживают липидный барьер кожи.');
+      } else {
+        out.push('Сухость кожи ' + dryness + '/10 при нормальном покрытии ПНЖК: проверьте питьевой режим (30 мл/кг) и ограничьте кофеин/алкоголь.');
+      }
+    }
+
+    if (seborrhea != null && seborrhea >= 5) {
+      var lowS = [];
+      if (cover('vit_b2') < 0.8) lowS.push('витамин B2');
+      if (cover('vit_b6') < 0.8) lowS.push('витамин B6');
+      if (cover('zinc') < 0.8)   lowS.push('цинк');
+      if (lowS.length) {
+        out.push('Жирность кожи ' + seborrhea + '/10: повысьте ' + lowS.join(', ') +
+          '. Источники: субпродукты, цельные злаки, бобовые, мясо, семена тыквы. ' +
+          'Недостаток B2/B6/Zn связан с гиперсекрецией сальных желёз.');
+      }
+    }
+
+    if (itch != null && itch >= 5) {
+      var lowI = [];
+      if (cover('omega3') < 0.8) lowI.push('омега-3');
+      if (cover('vit_e') < 0.8)  lowI.push('витамин E');
+      if (lowI.length) {
+        out.push('Зуд кожи ' + itch + '/10: повысьте ' + lowI.join(', ') +
+          '. Противовоспалительные ПНЖК снижают кожный зуд. Ограничьте быстрые углеводы и гистамин-богатые продукты.');
+      }
+    }
+
+    if (qol != null && qol >= 6) {
+      out.push('Индекс качества жизни из-за кожи ' + qol + '/10: рекомендовано обратиться к дерматологу/косметологу и обсудить план с преподавателем — диета одна не даст результата при таком уровне дистресса.');
+    }
+
+    // Нет высоких индексов, но есть данные — краткий мониторинг
+    if (!out.length) {
       var parts = [];
-      if (acne != null)  parts.push('акне ' + acne + '/10');
-      if (aging != null) parts.push('старение ' + aging + '/10');
-      out.push('Последний осмотр (' + UI.formatDate(last.date) + ', ' + dermZoneLabel(last.zone) + '): ' + parts.join(', ') +
-        '. Показатели в пределах нормы — продолжайте текущий рацион.');
+      if (acne != null)    parts.push('акне ' + acne + '/10');
+      if (aging != null)   parts.push('старение ' + aging + '/10');
+      if (dryness != null) parts.push('сухость ' + dryness + '/10');
+      if (seborrhea != null) parts.push('жирность ' + seborrhea + '/10');
+      if (itch != null)    parts.push('зуд ' + itch + '/10');
+      if (parts.length) {
+        var prefix = last
+          ? 'Последний осмотр (' + UI.formatDate(last.date) + ', ' + dermZoneLabel(last.zone) + ')'
+          : (lastSurvey ? 'Последний опрос (' + UI.formatDate(lastSurvey.date) + ')' : 'Данные по коже');
+        out.push(prefix + ': ' + parts.join(', ') + '. Показатели в пределах нормы — продолжайте текущий рацион.');
+      }
     }
 
     return out;
@@ -1170,6 +1455,7 @@ var NutriApp = (function() {
         '<div class="card__badge">' + NutriAnalysis.getActivityLabel(user.activity) + '</div>' +
       '</div>' +
       '<div id="norms-display">' + renderNormsBlock(norms) + '</div>' +
+      '<div id="micro-norms-display" class="mt-4">' + renderMicroNormsGroups(norms) + '</div>' +
     '</div>';
 
     $('#page-profile').innerHTML = html;
@@ -1190,6 +1476,8 @@ var NutriApp = (function() {
         activity: $('#prof-activity').value
       });
       $('#norms-display').innerHTML = renderNormsBlock(n);
+      var mnd = $('#micro-norms-display');
+      if (mnd) mnd.innerHTML = renderMicroNormsGroups(n);
     }
 
     $('#btn-save-profile').addEventListener('click', function() {
@@ -1225,6 +1513,35 @@ var NutriApp = (function() {
       '<div class="norm-card__value">' + value + '</div>' +
       '<div class="norm-card__label">' + label + '</div>' +
     '</div>';
+  }
+
+  /* Рендер микронутриентов (витамины/минералы/витаминоподобные) в виде
+     раскрывающихся таблиц. Если norms не переданы — используются значения
+     по умолчанию из реестра. */
+  function renderMicroNormsGroups(norms) {
+    if (typeof NutriList === 'undefined') return '';
+    var groups = [
+      { key: 'vitamin', title: 'Витамины' },
+      { key: 'mineral', title: 'Минералы' },
+      { key: 'other',   title: 'Витаминоподобные и условно-незаменимые' }
+    ];
+    var out = '';
+    groups.forEach(function(g) {
+      var items = NutriList.byGroup(g.key);
+      if (!items.length) return;
+      out += '<details class="micro-group"><summary class="card__title">' + g.title + '</summary>';
+      out += '<table class="micro-table"><thead><tr><th>Нутриент</th><th>Норма</th></tr></thead><tbody>';
+      items.forEach(function(n) {
+        var val = (norms && norms[n.key] != null) ? norms[n.key] : n.norm;
+        if (val == null) return;
+        out += '<tr>' +
+          '<td>' + escHtml(n.label) + '</td>' +
+          '<td class="num">' + NutriList.format(n.key, val) + ' ' + escHtml(n.unit) + '</td>' +
+        '</tr>';
+      });
+      out += '</tbody></table></details>';
+    });
+    return out;
   }
 
   /* ============================================
@@ -1387,8 +1704,31 @@ var NutriApp = (function() {
       '</div>' +
     '</div>';
 
+    // Dermatology profile (teacher-editable)
+    var dermList = (student.dermatoscopy || []).slice().sort(function(a,b) {
+      return (b.date + (b.time||'')).localeCompare(a.date + (a.time||''));
+    });
+    html += '<div class="section-title">Дерматологический профиль</div>';
+    html += '<button class="btn btn--primary mb-3" onclick="NutriApp.dermNewRecord(\'' + student.id + '\')">+ Новая запись</button>';
+    if (!dermList.length) {
+      html += '<div class="card"><div class="text-sm text-secondary">Пока нет записей.</div></div>';
+    } else {
+      dermList.forEach(function(r) { html += renderDermRecordCard(r, true, student.id); });
+    }
+
+    // Skin surveys (student-filled, teacher view-only with delete)
+    var surveyList = (student.skinSurveys || []).slice().sort(function(a,b) {
+      return (b.date + (b.time||'')).localeCompare(a.date + (a.time||''));
+    });
+    html += '<div class="section-title mt-5">Опросы состояния кожи (' + surveyList.length + ')</div>';
+    if (!surveyList.length) {
+      html += '<div class="card"><div class="text-sm text-secondary">Студент ещё не заполнял опрос.</div></div>';
+    } else {
+      surveyList.forEach(function(s) { html += renderSurveyCard(s, true, student.id); });
+    }
+
     // Reports
-    html += '<div class="section-title">Отчёты (' + reports.length + ')</div>';
+    html += '<div class="section-title mt-5">Отчёты (' + reports.length + ')</div>';
 
     if (!reports.length) {
       html += UI.emptyState('\ud83d\udcca', 'Нет отчётов', 'Студент ещё не вносил данные');
@@ -1970,9 +2310,12 @@ var NutriApp = (function() {
     addProductModal: addProductModal,
     exportStudentWeek: exportStudentWeek,
     exportStudentDoc: exportStudentDoc,
-    dermCreate: dermCreate,
     dermCloseModal: dermCloseModal,
-    dermDelete: dermDelete
+    dermNewRecord: dermNewRecord,
+    dermEditRecord: dermEditRecord,
+    dermDeleteRecord: dermDeleteRecord,
+    skinSurveyStart: skinSurveyStart,
+    skinSurveyDelete: skinSurveyDelete
   };
 })();
 

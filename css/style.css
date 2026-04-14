@@ -1383,6 +1383,49 @@ img { max-width: 100%; display: block; }
   color: var(--c-text);
   white-space: pre-wrap;
 }
+.derm-card__notes--comment {
+  background: #f0fdf4;
+  border-top: none;
+  border-left: 3px solid var(--c-primary);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  padding: var(--s-2) var(--s-3);
+  margin-top: var(--s-2);
+}
+
+/* Survey modal */
+.survey-form {
+  max-height: 60vh;
+  overflow-y: auto;
+  padding-right: var(--s-2);
+}
+.survey-q {
+  padding: var(--s-3) 0;
+  border-bottom: 1px solid var(--c-border-light);
+}
+.survey-q:last-child { border-bottom: none; }
+.survey-q__title {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--c-text);
+  margin-bottom: var(--s-2);
+}
+.survey-q__opts {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.survey-opt {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  font-size: var(--fs-sm);
+  color: var(--c-text-secondary);
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: var(--r-sm);
+}
+.survey-opt:hover { background: var(--c-border-light); }
+.survey-opt input { accent-color: var(--c-primary); }
 .derm-thumb {
   width: 72px;
   height: 72px;
