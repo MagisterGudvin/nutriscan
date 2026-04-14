@@ -369,6 +369,15 @@ var NutriApp = (function() {
     UI.showLoading('Анализируем рацион');
 
     NutriAPI.analyze(meals, norms, products).then(function(result) {
+      // Если агент не смог распарсить рацион и вернул нулевые totals —
+      // подхватываем локальным расчётом вместо пустого отчёта.
+      var t = result && result.totals;
+      var macroIsZero = !t || (!t.calories && !t.protein && !t.fat && !t.carbs);
+      var noSources = !result || !Array.isArray(result.sources) || !result.sources.length;
+      if (macroIsZero && noSources) {
+        throw new Error('empty analysis');
+      }
+
       UI.hideLoading();
 
       var report = {
@@ -1696,6 +1705,7 @@ var NutriApp = (function() {
           '<div class="norm-card"><div class="norm-card__value">' + (norms.omega3 || 1.5) + 'г</div><div class="norm-card__label">Омега-3</div></div>' +
           '<div class="norm-card"><div class="norm-card__value">' + (norms.omega6 || 10) + 'г</div><div class="norm-card__label">Омега-6</div></div>' +
         '</div>' +
+        '<div class="mt-4">' + renderMicroNormsGroups(norms) + '</div>' +
       '</div>' +
 
       // Edit form (hidden)
