@@ -123,9 +123,6 @@ var NutriApp = (function() {
     } else if (hash === '/products') {
       showPage('products');
       renderProductsPage();
-    } else if (hash === '/books') {
-      showPage('books');
-      renderBooksPage();
     } else if (hash === '/export') {
       showPage('export');
       renderExportPage();
@@ -166,9 +163,6 @@ var NutriApp = (function() {
       '</button>' +
       '<button class="nav-item' + (hash === '/products' ? ' active' : '') + '" data-nav="/products">' +
         '<span class="nav-icon">\ud83e\udd66</span><span class="nav-label">Продукты</span>' +
-      '</button>' +
-      '<button class="nav-item' + (hash === '/books' ? ' active' : '') + '" data-nav="/books">' +
-        '<span class="nav-icon">\ud83d\udcda</span><span class="nav-label">Книги</span>' +
       '</button>' +
       '<button class="nav-item' + (hash === '/export' ? ' active' : '') + '" data-nav="/export">' +
         '<span class="nav-icon">\ud83d\udce4</span><span class="nav-label">Экспорт</span>' +
@@ -359,7 +353,7 @@ var NutriApp = (function() {
 
     UI.showLoading('Анализируем рацион');
 
-    NutriAPI.analyze(meals, norms, products, []).then(function(result) {
+    NutriAPI.analyze(meals, norms, products).then(function(result) {
       UI.hideLoading();
 
       var report = {
@@ -1405,89 +1399,6 @@ var NutriApp = (function() {
         UI.toast('Продукт обновлён', 'success');
         renderProductsPage();
       });
-    });
-  }
-
-  /* ---- Books Page ---- */
-  function renderBooksPage() {
-    updateHeader('Книги', 'Справочные материалы');
-
-    var html = '';
-
-    html += '<div class="drop-zone" id="book-drop">' +
-      '<div class="drop-zone__icon">\ud83d\udcc1</div>' +
-      '<div class="drop-zone__text">Перетащите .md файлы сюда<br>или нажмите для выбора</div>' +
-      '<input type="file" accept=".md" multiple style="display:none" id="book-file-input">' +
-    '</div>';
-
-    html += '<div class="mt-5" id="books-list"></div>';
-
-    $('#page-books').innerHTML = html;
-
-    loadBooksList();
-
-    var dropZone = $('#book-drop');
-    var fileInput = $('#book-file-input');
-
-    dropZone.addEventListener('click', function() { fileInput.click(); });
-    dropZone.addEventListener('dragover', function(e) { e.preventDefault(); this.classList.add('dragover'); });
-    dropZone.addEventListener('dragleave', function() { this.classList.remove('dragover'); });
-    dropZone.addEventListener('drop', function(e) {
-      e.preventDefault();
-      this.classList.remove('dragover');
-      handleBookFiles(e.dataTransfer.files);
-    });
-    fileInput.addEventListener('change', function() { handleBookFiles(this.files); });
-  }
-
-  function handleBookFiles(files) {
-    Array.from(files).forEach(function(file) {
-      if (!file.name.endsWith('.md')) return;
-      var reader = new FileReader();
-      reader.onload = function(e) {
-        NutriAPI.putBook(file.name, e.target.result).then(function() {
-          UI.toast(file.name + ' загружен', 'success');
-          loadBooksList();
-        }).catch(function() {
-          UI.toast('Ошибка загрузки ' + file.name, 'error');
-        });
-      };
-      reader.readAsText(file);
-    });
-  }
-
-  function loadBooksList() {
-    var container = $('#books-list');
-    if (!container) return;
-
-    NutriAPI.listBooks().then(function(books) {
-      if (!books || !books.length) {
-        container.innerHTML = UI.emptyState('\ud83d\udcda', 'Нет книг', 'Загрузите справочные материалы в формате .md');
-        return;
-      }
-      var html = '';
-      books.forEach(function(name) {
-        html += '<div class="book-item">' +
-          '<div class="book-item__icon">\ud83d\udcd6</div>' +
-          '<div class="book-item__name">' + escHtml(name) + '</div>' +
-          '<button class="btn btn--sm btn--ghost" data-action="del-book" data-name="' + escAttr(name) + '">\ud83d\uddd1</button>' +
-        '</div>';
-      });
-      container.innerHTML = html;
-
-      container.addEventListener('click', function(e) {
-        var btn = e.target.closest('[data-action="del-book"]');
-        if (!btn) return;
-        var bookName = btn.dataset.name;
-        UI.confirm('Удалить книгу?', bookName, function() {
-          NutriAPI.deleteBook(bookName).then(function() {
-            UI.toast('Книга удалена', 'success');
-            loadBooksList();
-          });
-        });
-      });
-    }).catch(function() {
-      container.innerHTML = UI.emptyState('\ud83d\udcda', 'Нет подключения', 'Не удалось загрузить список книг');
     });
   }
 

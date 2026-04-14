@@ -20,12 +20,11 @@ var NutriAPI = (function() {
     });
   }
 
-  function analyze(meals, norms, products, books) {
+  function analyze(meals, norms, products) {
     return request('POST', '/api/analyze', {
       meals: meals,
       norms: norms,
-      products: products,
-      books: books
+      products: products
     });
   }
 
@@ -37,45 +36,10 @@ var NutriAPI = (function() {
     return request('PUT', '/data/' + file, data);
   }
 
-  function getBook(file) {
-    return fetch(getWorkerUrl() +'/books/' + encodeURIComponent(file)).then(function(r) {
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      return r.text();
-    });
-  }
-
-  function putBook(file, content) {
-    return fetch(getWorkerUrl() +'/books/' + encodeURIComponent(file), {
-      method: 'PUT',
-      headers: { 'Content-Type': 'text/plain' },
-      body: content
-    }).then(function(r) {
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      return r.json();
-    });
-  }
-
-  function deleteBook(file) {
-    return fetch(getWorkerUrl() +'/books/' + encodeURIComponent(file), {
-      method: 'DELETE'
-    }).then(function(r) {
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      return r.json();
-    });
-  }
-
-  function listBooks() {
-    return request('GET', '/books/index');
-  }
-
   return {
     analyze: analyze,
     getData: getData,
     putData: putData,
-    getBook: getBook,
-    putBook: putBook,
-    deleteBook: deleteBook,
-    listBooks: listBooks,
     getWorkerUrl: getWorkerUrl
   };
 })();

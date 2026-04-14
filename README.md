@@ -31,7 +31,6 @@
   * `data/users.json`
   * `data/reports.json`
   * `data/products_override.json`
-  * `books/*.md` — справочники, на которые ссылается AI
 
 ---
 
@@ -42,12 +41,10 @@
 
 ```
 nutri-data/
-├── data/
-│   ├── users.json              # []
-│   ├── reports.json            # {}
-│   └── products_override.json  # []
-└── books/
-    └── .gitkeep
+└── data/
+    ├── users.json              # []
+    ├── reports.json            # {}
+    └── products_override.json  # []
 ```
 
 Worker сам создаёт/обновляет файлы через GitHub Contents API.

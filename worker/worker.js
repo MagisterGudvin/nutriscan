@@ -48,30 +48,6 @@ export default {
         return handlePutData(env, file, body);
       }
 
-      // GET /books/index
-      if (path === '/books/index' && method === 'GET') {
-        return handleListBooks(env);
-      }
-
-      // GET /books/:file
-      if (path.startsWith('/books/') && method === 'GET') {
-        const file = decodeURIComponent(path.slice(7));
-        return handleGetBook(env, file);
-      }
-
-      // PUT /books/:file
-      if (path.startsWith('/books/') && method === 'PUT') {
-        const file = decodeURIComponent(path.slice(7));
-        const content = await request.text();
-        return handlePutBook(env, file, content);
-      }
-
-      // DELETE /books/:file
-      if (path.startsWith('/books/') && method === 'DELETE') {
-        const file = decodeURIComponent(path.slice(7));
-        return handleDeleteBook(env, file);
-      }
-
       return jsonResponse({ error: 'Not found' }, 404);
     } catch (err) {
       return jsonResponse({ error: err.message }, 500);
@@ -551,41 +527,3 @@ async function handlePutData(env, file, data) {
   return jsonResponse({ success: ok });
 }
 
-/* ---- Books handlers ---- */
-async function handleListBooks(env) {
-  const url = `https://api.github.com/repos/${env.GITHUB_REPO}/contents/books?ref=${env.GITHUB_BRANCH || 'main'}`;
-  const resp = await fetch(url, {
-    headers: {
-      'Authorization': `Bearer ${env.GITHUB_TOKEN}`,
-      'Accept': 'application/vnd.github.v3+json',
-      'User-Agent': 'NutriCheck-Worker',
-    }
-  });
-
-  if (!resp.ok) return jsonResponse([]);
-
-  const files = await resp.json();
-  if (!Array.isArray(files)) return jsonResponse([]);
-
-  const names = files
-    .filter(f => f.name.endsWith('.md'))
-    .map(f => f.name);
-
-  return jsonResponse(names);
-}
-
-async function handleGetBook(env, file) {
-  const result = await getGithubFile(env, `books/${file}`);
-  if (!result) return corsResponse('Not found', 404, 'text/plain');
-  return corsResponse(result.content, 200, 'text/plain; charset=utf-8');
-}
-
-async function handlePutBook(env, file, content) {
-  const ok = await putGithubFile(env, `books/${file}`, content, `Upload book ${file}`);
-  return jsonResponse({ success: ok });
-}
-
-async function handleDeleteBook(env, file) {
-  const ok = await deleteGithubFile(env, `books/${file}`);
-  return jsonResponse({ success: ok });
-}

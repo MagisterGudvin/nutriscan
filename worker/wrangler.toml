@@ -3,7 +3,7 @@ main = "worker.js"
 compatibility_date = "2024-12-01"
 
 # Публичные переменные. Поменяйте на ваш репозиторий, в котором будут лежать
-# data/users.json, data/reports.json, data/products_override.json и books/*.md
+# data/users.json, data/reports.json, data/products_override.json
 [vars]
 GITHUB_REPO = "MagisterGudvin/nutri-data"
 GITHUB_BRANCH = "main"
