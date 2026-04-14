@@ -8,6 +8,14 @@ var NutriApp = (function() {
   var $ = UI.$;
   var $$ = UI.$$;
 
+  // SVG-иконка "Выйти" — стрелка из двери. Не использует emoji (цветной
+  // глиф двери выглядел чужеродно в палитре приложения).
+  var LOGOUT_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+    '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>' +
+    '<polyline points="16 17 21 12 16 7"/>' +
+    '<line x1="21" y1="12" x2="9" y2="12"/>' +
+    '</svg>';
+
   var currentPage = '';
   var selectedDate = UI.todayStr();
   var selectedStudentId = null;
@@ -208,7 +216,7 @@ var NutriApp = (function() {
     var status = NutriAnalysis.getDayStatus(todayReport ? todayReport.totals : null, norms);
 
     updateHeader('NutriCheck', null,
-      '<button class="btn btn--icon btn--ghost" onclick="NutriApp.logout()">\ud83d\udeaa</button>');
+      '<button class="btn btn--logout" title="Выйти" aria-label="Выйти" onclick="NutriApp.logout()">' + LOGOUT_ICON + '</button>');
 
     var html = '';
 
@@ -795,7 +803,7 @@ var NutriApp = (function() {
     var norms = user.norms || NutriAnalysis.calculateNorms(user);
 
     updateHeader('Профиль', user.name,
-      '<button class="btn btn--sm btn--ghost" onclick="NutriApp.logout()">\ud83d\udeaa Выйти</button>');
+      '<button class="btn btn--logout" title="Выйти" aria-label="Выйти" onclick="NutriApp.logout()">' + LOGOUT_ICON + '</button>');
 
     var html = '<div class="card mb-5">' +
       '<div class="card__header"><div class="card__title">Параметры</div></div>' +
@@ -909,7 +917,7 @@ var NutriApp = (function() {
     var reports = NutriDB.getReports();
 
     updateHeader('Студенты', students.length + ' чел.',
-      '<button class="btn btn--sm btn--ghost" onclick="NutriApp.logout()">\ud83d\udeaa</button>');
+      '<button class="btn btn--logout" title="Выйти" aria-label="Выйти" onclick="NutriApp.logout()">' + LOGOUT_ICON + '</button>');
 
     var html = '';
 
