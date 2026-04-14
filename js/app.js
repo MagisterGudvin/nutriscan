@@ -270,6 +270,15 @@ var NutriApp = (function() {
       html += '</div>';
     }
 
+    // Micronutrient norms (collapsible groups)
+    var microHtml = renderMicroNormsGroups(norms);
+    if (microHtml) {
+      html += '<div class="card mb-5">' +
+        '<div class="card__header"><div class="card__title">Ваши нормы по микронутриентам</div></div>' +
+        microHtml +
+      '</div>';
+    }
+
     $('#page-home').innerHTML = html;
   }
 
