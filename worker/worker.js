@@ -133,7 +133,7 @@ async function handleAnalyze(request, env) {
         { role: 'user', content: prompt }
       ],
       temperature: 0.2,
-      max_tokens: 3000
+      max_tokens: 8000
     })
   });
 
@@ -242,17 +242,16 @@ function adaptAgentResponse(p) {
         }
       }
     }
-    if (any && (!p.totals || !num(p.totals.calories))) {
-      // Макро — округляем до целого (калории/Б/Ж/У), омеги — до 0.01
-      out.totals.calories = round(sum.calories);
-      out.totals.protein  = round1(sum.protein);
-      out.totals.fat      = round1(sum.fat);
-      out.totals.carbs    = round1(sum.carbs);
-      out.totals.omega3   = round2(sum.omega3);
-      out.totals.omega6   = round2(sum.omega6);
-      // Микро — всегда пишем, даже если 0 (чтобы UI рисовал норму)
+    // Заполняем per-key: если в p.totals ключа нет, подставляем сумму по блюдам.
+    // Это важно, т.к. агент часто присылает макро в totals, но микро — только по продуктам.
+    if (any) {
+      const hasTotalKey = k => p.totals && p.totals[k] != null;
+      const macroRound = { calories: round, protein: round1, fat: round1, carbs: round1, omega3: round2, omega6: round2 };
+      MACRO_KEYS.forEach(k => {
+        if (!hasTotalKey(k)) out.totals[k] = (macroRound[k] || round2)(sum[k]);
+      });
       MICRO_KEYS.forEach(k => {
-        out.totals[k] = round2(sum[k]);
+        if (!hasTotalKey(k)) out.totals[k] = round2(sum[k]);
       });
     }
   }
@@ -305,7 +304,48 @@ function extractJson(raw) {
   if (greedy) {
     try { return JSON.parse(greedy[0]); } catch (e) {}
   }
+
+  // Попытка «зашить» обрезанный JSON (truncated ответ из-за max_tokens):
+  // обрезаем хвост до ближайшей корректной позиции и закрываем скобки/строки.
+  const salvaged = salvageTruncatedJson(s);
+  if (salvaged) {
+    try { return JSON.parse(salvaged); } catch (e) {}
+  }
   return null;
+}
+
+function salvageTruncatedJson(s) {
+  const start = s.indexOf('{');
+  if (start === -1) return null;
+  let depth = 0, inStr = false, esc = false;
+  let lastValidEnd = -1;  // позиция последней "чистой" точки, где можно закрыть объект
+  let braceStack = [];    // стек символов-брекетов
+  for (let i = start; i < s.length; i++) {
+    const ch = s[i];
+    if (inStr) {
+      if (esc) { esc = false; continue; }
+      if (ch === '\\') { esc = true; continue; }
+      if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') { inStr = true; continue; }
+    if (ch === '{' || ch === '[') { braceStack.push(ch); depth++; }
+    else if (ch === '}' || ch === ']') { braceStack.pop(); depth--; }
+    if (!inStr && (ch === ',' || ch === '}' || ch === ']')) {
+      lastValidEnd = i;
+    }
+  }
+  if (lastValidEnd === -1) return null;
+  let head = s.slice(start, lastValidEnd + 1);
+  // Закрываем незакрытую строку
+  if (inStr) head += '"';
+  // Убираем висячую запятую
+  head = head.replace(/,\s*$/, '');
+  // Достраиваем парные закрывающие скобки в обратном порядке
+  for (let i = braceStack.length - 1; i >= 0; i--) {
+    head += braceStack[i] === '{' ? '}' : ']';
+  }
+  return head;
 }
 
 function sliceFirstJsonObject(s) {
@@ -415,26 +455,29 @@ function buildSystemPrompt() {
     '  "meals": {',
     '    "breakfast": [ {',
     '      "product":"...", "portion_g":0,',
-    '      "calories":0, "protein":0, "fat":0, "carbs":0, "omega3":0, "omega6":0,',
-    '      "vit_c":0, "vit_b1":0, "vit_b2":0, "vit_b6":0, "niacin":0, "vit_b12":0,',
-    '      "folate":0, "pantothenic":0, "biotin":0, "vit_a":0, "beta_carotene":0,',
-    '      "vit_e":0, "vit_d":0, "vit_k":0,',
-    '      "calcium":0, "phosphorus":0, "magnesium":0, "potassium":0, "sodium":0, "chloride":0,',
-    '      "iron":0, "zinc":0, "iodine":0, "copper":0, "manganese":0, "molybdenum":0,',
-    '      "selenium":0, "chromium":0, "cobalt":0, "fluoride":0, "silicon":0, "vanadium":0,',
-    '      "inositol":0, "l_carnitine":0, "coq10":0, "lipoic_acid":0, "smm":0,',
-    '      "orotic_acid":0, "paba":0, "choline":0,',
+    '      "calories":0, "protein":0, "fat":0, "carbs":0,',
+    '      "omega3":0, "omega6":0,',
+    '      /* допускается любой набор микро-ключей из списка ниже; поля с нулями МОЖНО опустить */',
+    '      "vit_c":0, "calcium":0, "iron":0, "zinc":0,',
     '      "source":"Скурихин", "detail":"табл. X, стр. Y"',
     '    } ],',
     '    "lunch":  [],',
     '    "snack":  [],',
     '    "dinner": []',
     '  },',
-    '  "totals": { /* суммы по всем полям выше */ },',
+    '  "totals": { "calories":0, "protein":0, "fat":0, "carbs":0 /* + любые микро-ключи */ },',
     '  "deficits":        ["..."],',
     '  "imbalances":      ["..."],',
     '  "recommendations": ["...","...","..."]',
     '}',
+    '',
+    'Допустимые ключи микронутриентов (можно опускать те, что равны 0):',
+    'vit_c, vit_b1, vit_b2, vit_b6, niacin, vit_b12, folate, pantothenic, biotin,',
+    'vit_a, beta_carotene, vit_e, vit_d, vit_k,',
+    'calcium, phosphorus, magnesium, potassium, sodium, chloride,',
+    'iron, zinc, iodine, copper, manganese, molybdenum, selenium, chromium, cobalt,',
+    'fluoride, silicon, vanadium,',
+    'inositol, l_carnitine, coq10, lipoic_acid, smm, orotic_acid, paba, choline.',
     '',
     '=== ЕДИНИЦЫ ИЗМЕРЕНИЯ ===',
     'calories — ккал; protein/fat/carbs — г; omega3/omega6 — г.',
@@ -447,11 +490,11 @@ function buildSystemPrompt() {
     '',
     '=== ПРАВИЛА ДЛЯ МИКРОНУТРИЕНТОВ ===',
     '- Все значения — абсолютные за ПОРЦИЮ (portion_g), НЕ на 100 г.',
-    '- Если в таблицах Скурихина нет данных по какому-то микронутриенту для данного',
-    '  продукта — ставь 0 (не выдумывай). Для витаминоподобных веществ (коэнзим Q10,',
-    '  липоевая кислота, оротовая кислота, paba, smm, l_carnitine, inositol) в обычных',
-    '  продуктах часто 0 — это нормально.',
-    '- Не пропускай поля: в каждом продукте должны присутствовать ВСЕ ключи из схемы.',
+    '- Если в таблицах Скурихина нет данных по микронутриенту — ПРОСТО ОПУСТИ этот ключ',
+    '  (не пиши 0 и не выдумывай). Это короче и надёжнее.',
+    '- Для витаминоподобных веществ (коэнзим Q10, липоевая кислота, оротовая кислота,',
+    '  paba, smm, l_carnitine, inositol) в обычных продуктах данных нет — опускай их.',
+    '- Макро-ключи (calories, protein, fat, carbs) обязательны в каждом продукте.',
     '',
     'Никаких лишних полей сверх схемы (никаких amino_acids, norms, code).'
   ].join('\n');
