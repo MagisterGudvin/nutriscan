@@ -6,5 +6,5 @@
    ============================================ */
 window.NUTRI_CONFIG = {
   // URL вашего Cloudflare Worker (без слеша на конце)
-  WORKER_URL: 'https://nutri-worker.your-subdomain.workers.dev'
+  WORKER_URL: 'nutri-worker.michaelgublin.workers.dev'
 };
