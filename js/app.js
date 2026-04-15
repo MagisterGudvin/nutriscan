@@ -2215,10 +2215,14 @@ var NutriApp = (function() {
       '<div class="auth-title">NutriForce</div>' +
       '<div class="auth-subtitle">Анализ питания студентов</div>' +
       '<div class="auth-form" id="auth-form">' +
+        '<div id="auth-status" class="auth-status"></div>' +
         '<div id="auth-fields"></div>' +
         '<button class="btn btn--primary btn--lg" id="auth-submit">Войти</button>' +
         '<div class="auth-toggle" id="auth-toggle">Нет аккаунта? <a id="auth-switch">Регистрация</a></div>' +
       '</div>';
+
+    // Если база ещё грузится — отражаем это в UI
+    refreshAuthStatus();
 
     var isLogin = true;
 
@@ -2257,6 +2261,10 @@ var NutriApp = (function() {
     renderFields();
 
     $('#auth-submit').addEventListener('click', function() {
+      if (!NutriDB.isInitialized()) {
+        UI.toast('База ещё загружается, подождите…', 'warning');
+        return;
+      }
       if (isLogin) {
         var result = NutriAuth.login($('#auth-login').value.trim(), $('#auth-pass').value);
         if (result.success) {
@@ -2344,14 +2352,83 @@ var NutriApp = (function() {
   }
 
   /* ---- Init ---- */
-  function init() {
-    // Загружаем все данные с воркера в in-memory кэш и только потом рисуем UI
-    NutriDB.init().catch(function(err) {
-      console.error('Не удалось загрузить данные:', err);
-      NutriUI.toast('Не удалось подключиться к серверу. Проверьте конфигурацию воркера.', 'error');
-    }).then(function() {
-      route();
+  // Отслеживаем состояние первой загрузки данных, чтобы корректно
+  // показывать статус на экране логина (актуально для России, где
+  // Cloudflare Worker может отдавать данные с задержкой 5-15 c).
+  var dbLoadState = 'loading'; // 'loading' | 'ok' | 'cache' | 'fail'
+  var dbLoadError = '';
+
+  function refreshAuthStatus() {
+    var el = document.getElementById('auth-status');
+    if (!el) return;
+    var btn = document.getElementById('auth-submit');
+    if (dbLoadState === 'loading') {
+      el.className = 'auth-status auth-status--info';
+      el.innerHTML = '<span class="spinner"></span> Загружаем базу пользователей…';
+      if (btn) { btn.disabled = true; btn.style.opacity = '0.6'; }
+    } else if (dbLoadState === 'ok') {
+      el.className = 'auth-status';
+      el.innerHTML = '';
+      if (btn) { btn.disabled = false; btn.style.opacity = ''; }
+    } else if (dbLoadState === 'cache') {
+      el.className = 'auth-status auth-status--warn';
+      el.innerHTML = 'Нет связи с сервером — используется локальный кэш. Новые регистрации могут не сохраниться.';
+      if (btn) { btn.disabled = false; btn.style.opacity = ''; }
+    } else if (dbLoadState === 'fail') {
+      el.className = 'auth-status auth-status--err';
+      el.innerHTML = 'Не удалось загрузить базу: ' + escHtml(dbLoadError || 'нет связи с сервером') +
+        ' <button class="btn btn--sm" id="auth-retry">Повторить</button>';
+      if (btn) { btn.disabled = true; btn.style.opacity = '0.6'; }
+      var retry = document.getElementById('auth-retry');
+      if (retry) retry.addEventListener('click', loadDb);
+    }
+  }
+
+  function loadDb() {
+    dbLoadState = 'loading';
+    dbLoadError = '';
+    refreshAuthStatus();
+    return NutriDB.init().then(function() {
+      var src = NutriStorage.getLastSource('users.json');
+      if (src === 'network') {
+        dbLoadState = 'ok';
+      } else if (src === 'cache') {
+        dbLoadState = 'cache';
+      } else {
+        // Сеть упала и кэша нет — пустая база
+        dbLoadState = 'fail';
+        dbLoadError = 'нет связи с сервером';
+      }
+      refreshAuthStatus();
+      if (NutriAuth.currentUser() && dbLoadState !== 'fail') {
+        route();
+      }
+    }, function(err) {
+      console.error('NutriDB.init failed:', err);
+      // Storage сам пытается localStorage; если init reject — кэша нет.
+      dbLoadState = 'fail';
+      dbLoadError = (err && err.message) || 'неизвестная ошибка';
+      refreshAuthStatus();
     });
+  }
+
+  function init() {
+    // Если нет сохранённой сессии — сразу рисуем экран логина со статусом
+    // загрузки, чтобы пользователь видел, что сайт жив (важно для России,
+    // где Worker может отвечать с задержкой 5-15 c).
+    // Если сессия есть — ждём БД, иначе дашборд отрендерится без данных.
+    var hasSession = !!NutriAuth.currentUser();
+    if (!hasSession) {
+      route(); // отрисуем auth-экран сразу
+      loadDb();
+    } else {
+      // Сессия есть, но данных в памяти ещё нет — рисуем auth с loader,
+      // потом, когда DB готова, route() уведёт на дашборд.
+      renderAuth();
+      loadDb().then(function() {
+        if (dbLoadState === 'ok' || dbLoadState === 'cache') route();
+      });
+    }
 
     window.addEventListener('hashchange', route);
 

@@ -1,21 +1,64 @@
 /* ============================================
    NutriForce — Storage Module (GitHub JSON via Worker)
+   --------------------------------------------
+   В РФ Cloudflare Worker часто дросселируется → fetch
+   таймаутится, и UI остаётся без данных. Решение:
+   зеркалим данные в localStorage. При загрузке сначала
+   быстро отдаём кэш (UI оживает мгновенно), параллельно
+   обновляем с сервера. При ошибке сети — кэш достаточен
+   для логина и работы в read-only.
    ============================================ */
 var NutriStorage = (function() {
   'use strict';
 
-  var cache = {};
+  var memCache = {};
+  var LS_PREFIX = 'nutri_cache_';
+  // Источник последней загрузки каждого файла: 'network' | 'cache' | 'none'
+  var lastSource = {};
 
+  function lsGet(file) {
+    try {
+      var raw = localStorage.getItem(LS_PREFIX + file);
+      if (!raw) return null;
+      return JSON.parse(raw);
+    } catch (e) { return null; }
+  }
+  function lsSet(file, data) {
+    try { localStorage.setItem(LS_PREFIX + file, JSON.stringify(data)); }
+    catch (e) { /* квота — пропускаем */ }
+  }
+  function lsHas(file) {
+    try { return localStorage.getItem(LS_PREFIX + file) != null; }
+    catch (e) { return false; }
+  }
+
+  /* loadJSON: возвращает Promise<data>.
+     Стратегия: ждём ответ Worker'а с таймаутом. Если успех — обновляем кэш.
+     Если упало (таймаут / сеть / 5xx) — отдаём кэш из localStorage, если есть.
+     Если кэша нет тоже — пробрасываем ошибку выше. */
   function loadJSON(file) {
-    if (cache[file]) return Promise.resolve(cache[file]);
+    if (memCache[file]) return Promise.resolve(memCache[file]);
     return NutriAPI.getData(file).then(function(data) {
-      cache[file] = data;
+      memCache[file] = data;
+      lsSet(file, data);
+      lastSource[file] = 'network';
       return data;
+    }, function(err) {
+      var cached = lsGet(file);
+      if (cached != null) {
+        memCache[file] = cached;
+        lastSource[file] = 'cache';
+        console.warn('[NutriStorage] ' + file + ': используем localStorage-кэш (' + (err && err.message) + ')');
+        return cached;
+      }
+      lastSource[file] = 'none';
+      throw err;
     });
   }
 
   function saveJSON(file, data) {
-    cache[file] = data;
+    memCache[file] = data;
+    lsSet(file, data); // оптимистичное сохранение в кэш
     return NutriAPI.putData(file, data);
   }
 
@@ -45,10 +88,18 @@ var NutriStorage = (function() {
 
   function invalidate(file) {
     if (file) {
-      delete cache[file];
+      delete memCache[file];
     } else {
-      cache = {};
+      memCache = {};
     }
+  }
+
+  function hasOfflineCache() {
+    return lsHas('users.json');
+  }
+
+  function getLastSource(file) {
+    return lastSource[file] || 'none';
   }
 
   return {
@@ -58,6 +109,8 @@ var NutriStorage = (function() {
     saveReports: saveReports,
     getProducts: getProducts,
     saveProducts: saveProducts,
-    invalidate: invalidate
+    invalidate: invalidate,
+    hasOfflineCache: hasOfflineCache,
+    getLastSource: getLastSource
   };
 })();

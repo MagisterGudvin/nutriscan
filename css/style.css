@@ -1016,6 +1016,46 @@ img { max-width: 100%; display: block; }
   cursor: pointer;
 }
 
+.auth-status {
+  font-size: var(--fs-sm);
+  border-radius: var(--r-md);
+  margin-bottom: var(--s-3);
+  line-height: 1.4;
+}
+.auth-status:empty { display: none; }
+.auth-status--info {
+  background: rgba(33, 150, 243, 0.08);
+  color: #1565c0;
+  padding: var(--s-2) var(--s-3);
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+.auth-status--warn {
+  background: rgba(255, 152, 0, 0.10);
+  color: #b26a00;
+  padding: var(--s-2) var(--s-3);
+}
+.auth-status--err {
+  background: rgba(244, 67, 54, 0.10);
+  color: #b71c1c;
+  padding: var(--s-2) var(--s-3);
+}
+.auth-status--err .btn { margin-left: var(--s-2); }
+
+.spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(0,0,0,0.15);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: nutri-spin 0.8s linear infinite;
+}
+@keyframes nutri-spin {
+  to { transform: rotate(360deg); }
+}
+
 /* --- Report Card --- */
 .report-card {
   background: var(--c-surface);
