@@ -9,5 +9,5 @@ window.NUTRI_CONFIG = {
   // быстрее и без блокировок CF/GitHub Pages.
   // Старый Cloudflare-воркер: https://nutri-worker.michaelgublin.workers.dev
   // (оставлен включённым как страховка, можно удалить через неделю стабильной работы)
-  WORKER_URL: 'https://magistergudvin-nutriscan-827d.twc1.net'
+  WORKER_URL: 'https://api.nutriforce.ru'
 };

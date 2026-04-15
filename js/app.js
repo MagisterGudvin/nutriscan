@@ -893,10 +893,18 @@ var NutriApp = (function() {
 
   /* Рендер карточки дерматологической записи.
      editable=true — показать кнопки редактирования (только для преподавателя).
-     targetUserId — чей профиль (нужен преподавателю для редактирования). */
+     targetUserId — чей профиль (нужен преподавателю для редактирования).
+     Фото выводятся отдельной галереей (все, не только первое); клик по фото
+     открывает лайтбокс. Галерею видят и преподаватель, и студент. */
   function renderDermRecordCard(r, editable, targetUserId) {
-    var imgCount = (r.images || []).length;
-    var thumb = imgCount ? '<img class="derm-thumb" src="' + r.images[0] + '" alt="">' : '<div class="derm-thumb derm-thumb--empty">\ud83d\udd2c</div>';
+    var images = Array.isArray(r.images) ? r.images : [];
+    var imgCount = images.length;
+    // Бейдж с числом фото слева в заголовке (вместо старой иконки-заглушки,
+    // которая занимала 72×72 и не давала полезной информации).
+    var badge = imgCount
+      ? '<div class="derm-card__badge derm-card__badge--has"><span class="derm-card__badge-ico">\ud83d\uddbc\ufe0f</span><span>' + imgCount + '</span></div>'
+      : '<div class="derm-card__badge derm-card__badge--empty">\ud83d\udd2c</div>';
+
     var actions = '';
     if (editable) {
       actions =
@@ -905,9 +913,28 @@ var NutriApp = (function() {
           '<button class="btn btn--sm btn--ghost" onclick="NutriApp.dermDeleteRecord(\'' + escAttr(targetUserId) + '\',\'' + escAttr(r.id) + '\')">\ud83d\uddd1</button>' +
         '</div>';
     }
+
+    // Галерея — все фото записи. Каждый thumb вызывает общий лайтбокс через
+    // dermOpenLightbox(recordId, index). Ссылка на запись идёт через
+    // data-id на карточке, так мы не зависим от замыкания и не тащим data-URL
+    // через onclick (data-URL может быть сотни КБ).
+    var gallery = '';
+    if (imgCount) {
+      gallery = '<div class="derm-gallery" data-rec="' + escAttr(r.id) + '">' +
+        images.map(function(src, i) {
+          return '<button type="button" class="derm-gallery__item" ' +
+            'data-idx="' + i + '" ' +
+            'onclick="NutriApp.dermOpenLightbox(\'' + escAttr(r.id) + '\',' + i + ')" ' +
+            'aria-label="Открыть фото ' + (i + 1) + ' из ' + imgCount + '">' +
+            '<img class="derm-gallery__img" src="' + src + '" alt="Фото ' + (i + 1) + '" loading="lazy">' +
+          '</button>';
+        }).join('') +
+      '</div>';
+    }
+
     return '<div class="card mb-3 derm-card" data-id="' + escAttr(r.id) + '">' +
       '<div class="derm-card__row">' +
-        thumb +
+        badge +
         '<div class="derm-card__body">' +
           '<div class="derm-card__title">' + escHtml(dermZoneLabel(r.zone)) + '</div>' +
           '<div class="derm-card__meta">' + escHtml(UI.formatDate(r.date)) + (r.time ? ', ' + escHtml(r.time) : '') + '</div>' +
@@ -917,13 +944,100 @@ var NutriApp = (function() {
                 (r.acneIndex != null ? '<span class="derm-idx derm-idx--acne">Акне: ' + r.acneIndex + '/10</span>' : '') +
                 (r.agingIndex != null ? '<span class="derm-idx derm-idx--aging">Старение: ' + r.agingIndex + '/10</span>' : '') +
               '</div>' : '') +
-          (imgCount > 1 ? '<div class="derm-card__meta text-xs">+' + (imgCount - 1) + ' фото</div>' : '') +
         '</div>' +
         actions +
       '</div>' +
+      gallery +
       (r.notes ? '<div class="derm-card__notes"><b>Заметки врача:</b> ' + escHtml(r.notes) + '</div>' : '') +
       (r.teacherComment ? '<div class="derm-card__notes derm-card__notes--comment"><b>Комментарий преподавателя:</b> ' + escHtml(r.teacherComment) + '</div>' : '') +
     '</div>';
+  }
+
+  /* ============================================
+     Lightbox для галереи дерматологии.
+     Находит запись по id в профиле самого студента (если он открыт)
+     или во всех пользователях (если страница — teacher's student detail).
+     ============================================ */
+  var dermLightboxState = null; // { images, index, recId }
+
+  function dermFindRecordById(recId) {
+    var cur = NutriAuth.currentUser();
+    var scan = function(user) {
+      if (!user) return null;
+      var list = user.dermatoscopy || [];
+      for (var i = 0; i < list.length; i++) if (list[i].id === recId) return list[i];
+      return null;
+    };
+    // Сначала свой профиль (дешёво)
+    var hit = scan(cur);
+    if (hit) return hit;
+    // Иначе ищем по всем пользователям (актуально для преподавателя)
+    var users = NutriDB.getUsers();
+    for (var i = 0; i < users.length; i++) {
+      hit = scan(users[i]);
+      if (hit) return hit;
+    }
+    return null;
+  }
+
+  function dermOpenLightbox(recId, index) {
+    var rec = dermFindRecordById(recId);
+    if (!rec || !rec.images || !rec.images.length) return;
+    dermLightboxState = { images: rec.images.slice(), index: Math.max(0, Math.min(index|0, rec.images.length - 1)), recId: recId };
+    dermLightboxRender();
+    document.addEventListener('keydown', dermLightboxKey);
+  }
+
+  function dermCloseLightbox() {
+    dermLightboxState = null;
+    var el = document.getElementById('derm-lightbox');
+    if (el) el.remove();
+    document.removeEventListener('keydown', dermLightboxKey);
+  }
+
+  function dermLightboxKey(e) {
+    if (!dermLightboxState) return;
+    if (e.key === 'Escape') dermCloseLightbox();
+    else if (e.key === 'ArrowRight') dermLightboxStep(1);
+    else if (e.key === 'ArrowLeft')  dermLightboxStep(-1);
+  }
+
+  function dermLightboxStep(delta) {
+    if (!dermLightboxState) return;
+    var n = dermLightboxState.images.length;
+    dermLightboxState.index = (dermLightboxState.index + delta + n) % n;
+    dermLightboxRender();
+  }
+
+  function dermLightboxRender() {
+    var s = dermLightboxState;
+    if (!s) return;
+    var el = document.getElementById('derm-lightbox');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'derm-lightbox';
+      el.className = 'derm-lightbox';
+      // Клик по фону (не по самому фото / кнопкам) — закрыть
+      el.addEventListener('click', function(e) {
+        if (e.target === el || e.target.classList.contains('derm-lightbox__backdrop')) {
+          dermCloseLightbox();
+        }
+      });
+      document.body.appendChild(el);
+    }
+    var total = s.images.length;
+    var src = s.images[s.index];
+    el.innerHTML =
+      '<div class="derm-lightbox__backdrop"></div>' +
+      '<button class="derm-lightbox__close" type="button" aria-label="Закрыть" onclick="NutriApp.dermCloseLightbox()">\u2715</button>' +
+      (total > 1
+        ? '<button class="derm-lightbox__nav derm-lightbox__nav--prev" type="button" aria-label="Предыдущее" onclick="NutriApp.dermLightboxStep(-1)">\u2039</button>' +
+          '<button class="derm-lightbox__nav derm-lightbox__nav--next" type="button" aria-label="Следующее" onclick="NutriApp.dermLightboxStep(1)">\u203a</button>'
+        : '') +
+      '<figure class="derm-lightbox__figure">' +
+        '<img class="derm-lightbox__img" src="' + src + '" alt="Фото ' + (s.index + 1) + '">' +
+        '<figcaption class="derm-lightbox__caption">' + (s.index + 1) + ' / ' + total + '</figcaption>' +
+      '</figure>';
   }
 
   /* Страница «Кожа» для СТУДЕНТА: read-only профиль от преподавателя + опрос. */
@@ -2453,6 +2567,9 @@ var NutriApp = (function() {
     dermNewRecord: dermNewRecord,
     dermEditRecord: dermEditRecord,
     dermDeleteRecord: dermDeleteRecord,
+    dermOpenLightbox: dermOpenLightbox,
+    dermCloseLightbox: dermCloseLightbox,
+    dermLightboxStep: dermLightboxStep,
     skinSurveyStart: skinSurveyStart,
     skinSurveyDelete: skinSurveyDelete
   };

@@ -1481,6 +1481,32 @@ img { max-width: 100%; display: block; }
   font-size: 28px;
   color: var(--c-text-secondary);
 }
+/* Бейдж в шапке карточки — заменил старый одиночный thumb.
+   Показывает иконку «микроскоп» если фото нет, и «N картинок»
+   если есть. Сами фото теперь ниже отдельной галереей. */
+.derm-card__badge {
+  width: 56px;
+  height: 56px;
+  border-radius: var(--r-lg);
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  gap: 2px;
+  background: var(--c-border-light);
+  color: var(--c-text-secondary);
+}
+.derm-card__badge--has {
+  background: #ede9fe;
+  color: #5b21b6;
+}
+.derm-card__badge-ico { font-size: 20px; line-height: 1; }
+.derm-card__badge--empty { font-size: 22px; }
+
+/* Форма загрузки фото (превью перед сохранением) */
 .derm-preview {
   display: flex;
   gap: var(--s-2);
@@ -1493,6 +1519,107 @@ img { max-width: 100%; display: block; }
   border-radius: var(--r-md);
   object-fit: cover;
   border: 1px solid var(--c-border-light);
+}
+
+/* --- Галерея фото в сохранённой дерм-записи --- */
+.derm-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: var(--s-2);
+  margin-top: var(--s-3);
+}
+.derm-gallery__item {
+  position: relative;
+  padding: 0;
+  border: none;
+  background: var(--c-border-light);
+  border-radius: var(--r-md);
+  overflow: hidden;
+  cursor: zoom-in;
+  aspect-ratio: 1 / 1;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.derm-gallery__item:hover {
+  transform: scale(1.03);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+}
+.derm-gallery__item:focus-visible {
+  outline: 2px solid var(--c-primary);
+  outline-offset: 2px;
+}
+.derm-gallery__img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* --- Лайтбокс для открытого фото --- */
+.derm-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: dermFadeIn 0.15s ease;
+}
+.derm-lightbox__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0.88);
+  cursor: zoom-out;
+}
+.derm-lightbox__figure {
+  position: relative;
+  z-index: 1;
+  max-width: 95vw;
+  max-height: 92vh;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s-3);
+  pointer-events: none; /* фон ловит клик для закрытия */
+}
+.derm-lightbox__img {
+  max-width: 95vw;
+  max-height: 85vh;
+  border-radius: var(--r-md);
+  box-shadow: 0 10px 40px rgba(0,0,0,0.6);
+  pointer-events: auto;
+}
+.derm-lightbox__caption {
+  color: #fff;
+  font-size: var(--fs-sm);
+  opacity: 0.8;
+}
+.derm-lightbox__close,
+.derm-lightbox__nav {
+  position: absolute;
+  z-index: 2;
+  background: rgba(0,0,0,0.5);
+  color: #fff;
+  border: none;
+  border-radius: 50%;
+  width: 44px;
+  height: 44px;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease;
+}
+.derm-lightbox__close:hover,
+.derm-lightbox__nav:hover { background: rgba(0,0,0,0.8); }
+.derm-lightbox__close { top: 16px; right: 16px; }
+.derm-lightbox__nav--prev { left: 16px; top: 50%; transform: translateY(-50%); }
+.derm-lightbox__nav--next { right: 16px; top: 50%; transform: translateY(-50%); }
+@keyframes dermFadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 
 .rec-block--skin {
