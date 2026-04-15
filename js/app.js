@@ -1394,17 +1394,20 @@ var NutriApp = (function() {
     var h = NutriUI.showModal(content);
     $('#survey-cancel').addEventListener('click', function() { h.close(); });
     $('#survey-save').addEventListener('click', function() {
+      var btn = this;
       var answers = SKIN_SURVEY.map(function(q) {
         var sel = document.querySelector('input[name="' + q.key + '"]:checked');
         return sel ? parseInt(sel.value, 10) : 0;
       });
-      skinSurveySave(answers, h);
+      NutriUI.runWithSpinner(btn, 'Сохраняем\u2026', function() {
+        return skinSurveySave(answers, h);
+      });
     });
   }
 
   function skinSurveySave(answers, modalHandle) {
     var user = NutriAuth.currentUser();
-    if (!user) return;
+    if (!user) return Promise.resolve();
     var now = new Date();
     var pad = function(n) { return n < 10 ? '0' + n : '' + n; };
     var survey = {
@@ -1417,12 +1420,13 @@ var NutriApp = (function() {
     };
     var list = (user.skinSurveys || []).slice();
     list.push(survey);
-    NutriDB.updateUser(user.id, { skinSurveys: list }).then(function() {
+    return NutriDB.updateUser(user.id, { skinSurveys: list }).then(function() {
       NutriUI.toast('Опрос сохранён', 'success');
       if (modalHandle) modalHandle.close();
       if (currentPage === 'derm') renderDermPage();
     }).catch(function(err) {
-      NutriUI.toast('Не удалось сохранить: ' + err.message, 'error');
+      NutriUI.toast('Не удалось сохранить: ' + (err && err.message || 'ошибка'), 'error');
+      throw err;
     });
   }
 
@@ -1717,9 +1721,13 @@ var NutriApp = (function() {
         activity: $('#prof-activity').value
       };
       data.norms = NutriAnalysis.calculateNorms(data);
-      NutriDB.updateUser(user.id, data).then(function() {
-        NutriDB.setSession(NutriDB.findUserById(user.id));
-        UI.toast('Профиль обновлён', 'success');
+      UI.runWithSpinner(this, 'Сохраняем\u2026', function() {
+        return NutriDB.updateUser(user.id, data).then(function() {
+          NutriDB.setSession(NutriDB.findUserById(user.id));
+          UI.toast('Профиль обновлён', 'success');
+        });
+      }).catch(function(err) {
+        UI.toast('Не удалось сохранить: ' + (err && err.message || 'ошибка'), 'error');
       });
     });
   }
@@ -1836,7 +1844,7 @@ var NutriApp = (function() {
         navigate('/student/' + id);
       } else if (action === 'delete') {
         UI.confirm('Удалить студента?', 'Все данные будут удалены безвозвратно.', function() {
-          NutriDB.deleteUser(id).then(function() {
+          return NutriDB.deleteUser(id).then(function() {
             UI.toast('Студент удалён', 'success');
             renderStudentsPage();
           });
@@ -2053,9 +2061,13 @@ var NutriApp = (function() {
         activity: $('#te-activity').value
       };
       data.norms = NutriAnalysis.calculateNorms(data);
-      NutriDB.updateUser(student.id, data).then(function() {
-        UI.toast('Параметры обновлены', 'success');
-        renderStudentDetailPage();
+      UI.runWithSpinner(this, 'Сохраняем\u2026', function() {
+        return NutriDB.updateUser(student.id, data).then(function() {
+          UI.toast('Параметры обновлены', 'success');
+          renderStudentDetailPage();
+        });
+      }).catch(function(err) {
+        UI.toast('Не удалось сохранить: ' + (err && err.message || 'ошибка'), 'error');
       });
     });
 
@@ -2101,9 +2113,13 @@ var NutriApp = (function() {
         tdee: (student.norms && student.norms.tdee) || 0,
         goal: 'maintain'
       };
-      NutriDB.updateUser(student.id, { norms: customNorms }).then(function() {
-        UI.toast('Нормы сохранены', 'success');
-        renderStudentDetailPage();
+      UI.runWithSpinner(this, 'Сохраняем\u2026', function() {
+        return NutriDB.updateUser(student.id, { norms: customNorms }).then(function() {
+          UI.toast('Нормы сохранены', 'success');
+          renderStudentDetailPage();
+        });
+      }).catch(function(err) {
+        UI.toast('Не удалось сохранить: ' + (err && err.message || 'ошибка'), 'error');
       });
     });
 
@@ -2122,7 +2138,7 @@ var NutriApp = (function() {
         }
       } else if (btn.dataset.action === 'del-report') {
         UI.confirm('Удалить отчёт?', 'Отчёт за ' + date + ' будет удалён.', function() {
-          NutriDB.deleteReport(student.id, date).then(function() {
+          return NutriDB.deleteReport(student.id, date).then(function() {
             UI.toast('Отчёт удалён', 'success');
             renderStudentDetailPage();
           });
@@ -2145,9 +2161,13 @@ var NutriApp = (function() {
         var report = reports.find(function(r) { return r.date === date; });
         if (report) {
           report.recommendations = newRecs;
-          NutriDB.saveReport(student.id, report).then(function() {
-            UI.toast('Рекомендации сохранены', 'success');
-            reports = NutriDB.getStudentReports(student.id);
+          UI.runWithSpinner(btn, 'Сохраняем\u2026', function() {
+            return NutriDB.saveReport(student.id, report).then(function() {
+              UI.toast('Рекомендации сохранены', 'success');
+              reports = NutriDB.getStudentReports(student.id);
+            });
+          }).catch(function(err) {
+            UI.toast('Не удалось сохранить: ' + (err && err.message || 'ошибка'), 'error');
           });
         }
       } else if (btn.dataset.action === 'save-comment') {
@@ -2156,9 +2176,13 @@ var NutriApp = (function() {
         var report = reports.find(function(r) { return r.date === date; });
         if (report) {
           report.teacherComment = comment;
-          NutriDB.saveReport(student.id, report).then(function() {
-            UI.toast('Комментарий сохранён', 'success');
-            reports = NutriDB.getStudentReports(student.id);
+          UI.runWithSpinner(btn, 'Сохраняем\u2026', function() {
+            return NutriDB.saveReport(student.id, report).then(function() {
+              UI.toast('Комментарий сохранён', 'success');
+              reports = NutriDB.getStudentReports(student.id);
+            });
+          }).catch(function(err) {
+            UI.toast('Не удалось сохранить: ' + (err && err.message || 'ошибка'), 'error');
           });
         }
       }
@@ -2221,7 +2245,7 @@ var NutriApp = (function() {
         editProductModal(idx);
       } else if (btn.dataset.action === 'del-product') {
         UI.confirm('Удалить продукт?', 'Продукт будет удалён из базы.', function() {
-          NutriDB.deleteProduct(idx).then(function() {
+          return NutriDB.deleteProduct(idx).then(function() {
             UI.toast('Продукт удалён', 'success');
             renderProductsPage();
           });
@@ -2246,18 +2270,22 @@ var NutriApp = (function() {
     $('#pm-save').addEventListener('click', function() {
       var name = $('#pm-name').value.trim();
       if (!name) { UI.toast('Введите название', 'warning'); return; }
-      NutriDB.addProduct({
-        name: name,
-        calories: parseFloat($('#pm-cal').value) || 0,
-        protein: parseFloat($('#pm-prot').value) || 0,
-        fat: parseFloat($('#pm-fat').value) || 0,
-        carbs: parseFloat($('#pm-carbs').value) || 0,
-        source: $('#pm-source').value.trim(),
-        detail: $('#pm-detail').value.trim()
-      }).then(function() {
-        m.close();
-        UI.toast('Продукт добавлен', 'success');
-        renderProductsPage();
+      UI.runWithSpinner(this, 'Сохраняем\u2026', function() {
+        return NutriDB.addProduct({
+          name: name,
+          calories: parseFloat($('#pm-cal').value) || 0,
+          protein: parseFloat($('#pm-prot').value) || 0,
+          fat: parseFloat($('#pm-fat').value) || 0,
+          carbs: parseFloat($('#pm-carbs').value) || 0,
+          source: $('#pm-source').value.trim(),
+          detail: $('#pm-detail').value.trim()
+        }).then(function() {
+          m.close();
+          UI.toast('Продукт добавлен', 'success');
+          renderProductsPage();
+        });
+      }).catch(function(err) {
+        UI.toast('Не удалось сохранить: ' + (err && err.message || 'ошибка'), 'error');
       });
     });
   }
@@ -2280,18 +2308,22 @@ var NutriApp = (function() {
     );
 
     $('#pm-save').addEventListener('click', function() {
-      NutriDB.updateProduct(idx, {
-        name: $('#pm-name').value.trim() || p.name,
-        calories: parseFloat($('#pm-cal').value) || 0,
-        protein: parseFloat($('#pm-prot').value) || 0,
-        fat: parseFloat($('#pm-fat').value) || 0,
-        carbs: parseFloat($('#pm-carbs').value) || 0,
-        source: $('#pm-source').value.trim(),
-        detail: $('#pm-detail').value.trim()
-      }).then(function() {
-        m.close();
-        UI.toast('Продукт обновлён', 'success');
-        renderProductsPage();
+      UI.runWithSpinner(this, 'Сохраняем\u2026', function() {
+        return NutriDB.updateProduct(idx, {
+          name: $('#pm-name').value.trim() || p.name,
+          calories: parseFloat($('#pm-cal').value) || 0,
+          protein: parseFloat($('#pm-prot').value) || 0,
+          fat: parseFloat($('#pm-fat').value) || 0,
+          carbs: parseFloat($('#pm-carbs').value) || 0,
+          source: $('#pm-source').value.trim(),
+          detail: $('#pm-detail').value.trim()
+        }).then(function() {
+          m.close();
+          UI.toast('Продукт обновлён', 'success');
+          renderProductsPage();
+        });
+      }).catch(function(err) {
+        UI.toast('Не удалось сохранить: ' + (err && err.message || 'ошибка'), 'error');
       });
     });
   }

@@ -53,7 +53,10 @@ var NutriUI = (function() {
     return { overlay: overlay, modal: modal, close: function() { overlay.remove(); if (onClose) onClose(); } };
   }
 
-  function confirm(title, text, onOk) {
+  function confirm(title, text, onOk, opts) {
+    opts = opts || {};
+    var okLabel = opts.okLabel || 'Удалить';
+    var busyLabel = opts.busyLabel || 'Удаляем\u2026';
     var overlay = document.createElement('div');
     overlay.className = 'modal-overlay modal-overlay--center';
     overlay.innerHTML =
@@ -62,15 +65,67 @@ var NutriUI = (function() {
         '<div class="confirm-dialog__text">' + text + '</div>' +
         '<div class="confirm-dialog__actions">' +
           '<button class="btn btn--secondary" data-action="cancel">Отмена</button>' +
-          '<button class="btn btn--danger" data-action="ok">Удалить</button>' +
+          '<button class="btn btn--danger" data-action="ok">' + okLabel + '</button>' +
         '</div>' +
       '</div>';
+    var okBtn = overlay.querySelector('[data-action="ok"]');
+    var cancelBtn = overlay.querySelector('[data-action="cancel"]');
+    var busy = false;
     overlay.addEventListener('click', function(e) {
-      var action = e.target.dataset.action;
-      if (action === 'cancel' || e.target === overlay) overlay.remove();
-      if (action === 'ok') { overlay.remove(); onOk(); }
+      if (busy) return;
+      var action = e.target.dataset && e.target.dataset.action;
+      if (action === 'cancel' || e.target === overlay) { overlay.remove(); return; }
+      if (action !== 'ok') return;
+      var result;
+      try { result = onOk(); } catch (err) { result = Promise.reject(err); }
+      if (!result || typeof result.then !== 'function') {
+        overlay.remove();
+        return;
+      }
+      busy = true;
+      okBtn.innerHTML = '<span class="spinner"></span>&nbsp;' + busyLabel;
+      okBtn.disabled = true;
+      okBtn.style.opacity = '0.7';
+      cancelBtn.disabled = true;
+      cancelBtn.style.opacity = '0.6';
+      result.then(function() {
+        overlay.remove();
+      }).catch(function(err) {
+        busy = false;
+        okBtn.innerHTML = okLabel;
+        okBtn.disabled = false;
+        okBtn.style.opacity = '';
+        cancelBtn.disabled = false;
+        cancelBtn.style.opacity = '';
+        toast('Не удалось: ' + ((err && err.message) || 'ошибка'), 'error');
+      });
     });
     document.body.appendChild(overlay);
+  }
+
+  /**
+   * Оборачивает асинхронную операцию спиннером на кнопке.
+   * btn — сам элемент кнопки или селектор.
+   * busyText — текст рядом со спиннером (по умолчанию «Сохраняем…»).
+   * task — функция, возвращающая Promise (или значение).
+   * Возвращает Promise, который резолвится/реджектится как task().
+   */
+  function runWithSpinner(btn, busyText, task) {
+    if (typeof btn === 'string') btn = $(btn);
+    if (!btn) { try { return Promise.resolve(task()); } catch (e) { return Promise.reject(e); } }
+    var origHtml = btn.innerHTML;
+    var origDisabled = btn.disabled;
+    var origOpacity = btn.style.opacity;
+    btn.innerHTML = '<span class="spinner"></span>&nbsp;' + (busyText || 'Сохраняем\u2026');
+    btn.disabled = true;
+    btn.style.opacity = '0.7';
+    var p;
+    try { p = Promise.resolve(task()); } catch (e) { p = Promise.reject(e); }
+    return p.finally(function() {
+      btn.innerHTML = origHtml;
+      btn.disabled = origDisabled;
+      btn.style.opacity = origOpacity;
+    });
   }
 
   function progressRing(value, max, size, strokeWidth, colorClass) {
@@ -181,6 +236,7 @@ var NutriUI = (function() {
     hideLoading: hideLoading,
     showModal: showModal,
     confirm: confirm,
+    runWithSpinner: runWithSpinner,
     progressRing: progressRing,
     progressBar: progressBar,
     skeleton: skeleton,
