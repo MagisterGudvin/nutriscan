@@ -66,12 +66,18 @@ function analyzeCacheKey(body) {
   const n = body.norms || {};
   // Не включаем справочник преподавателя в ключ — обычно стабилен,
   // и его изменение всё равно даст другой ответ только при совпадении блюд.
+  // Индексы кожи включаем — рекомендации зависят от них.
+  const sk = {};
+  ['skin_acne','skin_aging','skin_dryness','skin_seborrhea','skin_itch','skin_qol'].forEach(k => {
+    if (n[k] != null) sk[k] = n[k];
+  });
   return JSON.stringify({
     b: (m.breakfast || '').trim().toLowerCase(),
     l: (m.lunch || '').trim().toLowerCase(),
     s: (m.snack || '').trim().toLowerCase(),
     d: (m.dinner || '').trim().toLowerCase(),
-    n: { c: n.calories|0, p: n.protein|0, f: n.fat|0, ch: n.carbs|0 }
+    n: { c: n.calories|0, p: n.protein|0, f: n.fat|0, ch: n.carbs|0 },
+    sk: sk
   });
 }
 
@@ -548,6 +554,19 @@ function buildAnalysisPrompt(body) {
     if (n.omega3 != null) prompt += `, Ω3≥${n.omega3}`;
     if (n.omega6 != null) prompt += `, Ω6≤${n.omega6}`;
     prompt += '\n';
+  }
+
+  // Микронормы (если фронт прислал их в norms) — короткой строкой
+  const microNormKeys = Object.keys(n).filter(k => MICRO_KEYS.indexOf(k) !== -1);
+  if (microNormKeys.length) {
+    prompt += 'МИКРОНОРМЫ: ' + microNormKeys.map(k => `${k}=${n[k]}`).join(', ') + '\n';
+  }
+
+  // Индексы кожи (0-10) — если есть, агент учтёт их в recommendations
+  const skinKeys = ['skin_acne','skin_aging','skin_dryness','skin_seborrhea','skin_itch','skin_qol'];
+  const skinPresent = skinKeys.filter(k => n[k] != null);
+  if (skinPresent.length) {
+    prompt += 'ИНДЕКСЫ КОЖИ (0-10): ' + skinPresent.map(k => `${k}=${n[k]}`).join(', ') + '\n';
   }
 
   if (Array.isArray(body.products) && body.products.length) {

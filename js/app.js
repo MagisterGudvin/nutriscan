@@ -352,6 +352,13 @@ var NutriApp = (function() {
     var user = NutriAuth.currentUser();
     var norms = user.norms || NutriAnalysis.calculateNorms(user);
 
+    // Подмешиваем последние индексы кожи из дерматологического профиля
+    // и опроса (max по каждой оси), чтобы агент учёл их в рекомендациях.
+    var skin = computeLatestSkinIndices(user);
+    if (skin) {
+      norms = Object.assign({}, norms, skin);
+    }
+
     var meals = {
       breakfast: $('#meal-breakfast').value.trim(),
       snack: $('#meal-snack').value.trim(),
@@ -1296,6 +1303,42 @@ var NutriApp = (function() {
      Логика: берём последнюю дерматоскопическую запись, сопоставляем
      её индексы (акне/старение) с фактическим покрытием нутриентов
      по норме. Пороги: индекс ≥ 5 = высокий, покрытие < 80% = дефицит. */
+  /* Возвращает последние индексы кожи 0-10 для отправки в Worker.
+     Берёт максимум по каждой оси из последней дерматологической записи
+     и последнего опроса. Возвращает null, если данных нет вовсе. */
+  function computeLatestSkinIndices(user) {
+    if (!user) return null;
+    var records = user.dermatoscopy || [];
+    var surveys = user.skinSurveys || [];
+    if (!records.length && !surveys.length) return null;
+
+    var last = records.length ? records.slice().sort(function(a, b) {
+      return (b.date + (b.time||'')).localeCompare(a.date + (a.time||''));
+    })[0] : null;
+
+    var lastSurvey = surveys.length ? surveys.slice().sort(function(a, b) {
+      return (b.date + (b.time||'')).localeCompare(a.date + (a.time||''));
+    })[0] : null;
+    var sIdx = (lastSurvey && lastSurvey.indices) || {};
+
+    var pickMax = function(a, b) {
+      if (a == null && b == null) return null;
+      if (a == null) return b;
+      if (b == null) return a;
+      return Math.max(a, b);
+    };
+
+    var out = {};
+    var add = function(key, val) { if (val != null) out[key] = val; };
+    add('skin_acne',      pickMax(last && last.acneIndex,  sIdx.acne));
+    add('skin_aging',     pickMax(last && last.agingIndex, sIdx.aging));
+    add('skin_dryness',   sIdx.dryness);
+    add('skin_seborrhea', sIdx.seborrhea);
+    add('skin_itch',      sIdx.itch);
+    add('skin_qol',       sIdx.qol);
+    return Object.keys(out).length ? out : null;
+  }
+
   function computeSkinRecommendations(totals, norms, user) {
     if (!user || !totals || !norms) return [];
     var records = user.dermatoscopy || [];
