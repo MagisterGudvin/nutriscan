@@ -1834,7 +1834,9 @@ var NutriApp = (function() {
     }
 
     // Actions
-    $('#page-students').addEventListener('click', function(e) {
+    var studentsPage = $('#page-students');
+    if (studentsPage._clickHandler) studentsPage.removeEventListener('click', studentsPage._clickHandler);
+    studentsPage._clickHandler = function(e) {
       var btn = e.target.closest('[data-action]');
       if (!btn) return;
       var action = btn.dataset.action;
@@ -1850,7 +1852,8 @@ var NutriApp = (function() {
           });
         });
       }
-    });
+    };
+    studentsPage.addEventListener('click', studentsPage._clickHandler);
   }
 
   /* ---- Student Detail ---- */
@@ -2124,7 +2127,9 @@ var NutriApp = (function() {
     });
 
     // Report actions
-    $('#page-student-detail').addEventListener('click', function(e) {
+    var detailPage = $('#page-student-detail');
+    if (detailPage._clickHandler) detailPage.removeEventListener('click', detailPage._clickHandler);
+    detailPage._clickHandler = function(e) {
       var btn = e.target.closest('[data-action]');
       if (!btn) return;
       var date = btn.dataset.date;
@@ -2186,7 +2191,8 @@ var NutriApp = (function() {
           });
         }
       }
-    });
+    };
+    detailPage.addEventListener('click', detailPage._clickHandler);
   }
 
   /* ---- Products Page ---- */
@@ -2236,7 +2242,9 @@ var NutriApp = (function() {
     }
 
     // Actions
-    $('#page-products').addEventListener('click', function(e) {
+    var productsPage = $('#page-products');
+    if (productsPage._clickHandler) productsPage.removeEventListener('click', productsPage._clickHandler);
+    productsPage._clickHandler = function(e) {
       var btn = e.target.closest('[data-action]');
       if (!btn) return;
       var idx = parseInt(btn.dataset.index);
@@ -2251,7 +2259,8 @@ var NutriApp = (function() {
           });
         });
       }
-    });
+    };
+    productsPage.addEventListener('click', productsPage._clickHandler);
   }
 
   function addProductModal() {
