@@ -1157,60 +1157,112 @@ var NutriApp = (function() {
       $('#derm-preview').appendChild(img);
     });
 
+    // Трекаем промисы сжатия, чтобы Save корректно дождался всех фото,
+    // даже если пользователь жмёт Сохранить сразу после выбора файлов.
+    // (Без этого save уходил на сервер с частью фото или блокировал UI.)
+    var pendingPhotos = [];
+
+    function updateSaveBtnState() {
+      var btn = $('#derm-save-btn');
+      if (!btn) return;
+      var n = pendingPhotos.length;
+      if (n > 0) {
+        btn.innerHTML = '<span class="spinner"></span> Обработка фото (' + n + ')…';
+        btn.disabled = true;
+        btn.style.opacity = '0.7';
+      } else if (!btn.dataset.saving) {
+        btn.textContent = 'Сохранить';
+        btn.disabled = false;
+        btn.style.opacity = '';
+      }
+    }
+
     $('#derm-files').addEventListener('change', function(e) {
       var files = Array.from(e.target.files || []);
       files.forEach(function(f) {
         if (!f.type.startsWith('image/')) return;
-        dermReadDownscale(f).then(function(dataUrl) {
+        var p = dermReadDownscale(f).then(function(dataUrl) {
           images.push(dataUrl);
           var img = document.createElement('img');
           img.src = dataUrl;
           img.className = 'derm-preview__img';
-          $('#derm-preview').appendChild(img);
+          var pv = $('#derm-preview');
+          if (pv) pv.appendChild(img);
         }).catch(function(err) {
           NutriUI.toast('Не удалось прочитать файл: ' + err.message, 'error');
+        }).finally(function() {
+          var i = pendingPhotos.indexOf(p);
+          if (i >= 0) pendingPhotos.splice(i, 1);
+          updateSaveBtnState();
         });
+        pendingPhotos.push(p);
       });
+      updateSaveBtnState();
     });
 
     $('#derm-save-btn').addEventListener('click', function() {
-      var base = existing || {};
-      var record = {
-        id: existing ? existing.id : ('d_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7)),
-        zone: $('#derm-zone').value,
-        date: $('#derm-date').value,
-        time: $('#derm-time').value,
-        device: $('#derm-device').value,
-        exam: $('#derm-exam').value,
-        notes: $('#derm-notes').value.trim(),
-        teacherComment: $('#derm-comment').value.trim(),
-        images: images,
-        createdAt: base.createdAt || new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      };
-      var a = $('#derm-acne').value;
-      var g = $('#derm-aging').value;
-      if (a !== '') record.acneIndex = parseFloat(a);
-      if (g !== '') record.agingIndex = parseFloat(g);
+      var btn = $('#derm-save-btn');
+      var cancel = $('#derm-cancel-btn');
 
-      if (!record.date) { NutriUI.toast('Укажите дату осмотра', 'error'); return; }
-
-      var list = (target.dermatoscopy || []).slice();
-      if (existing) {
-        var idx = list.findIndex(function(r) { return r.id === existing.id; });
-        if (idx >= 0) list[idx] = record; else list.push(record);
-      } else {
-        list.push(record);
+      function setSaving(on) {
+        if (on) {
+          btn.dataset.saving = '1';
+          btn.innerHTML = '<span class="spinner"></span> Сохраняем…';
+          btn.disabled = true;
+          btn.style.opacity = '0.7';
+          if (cancel) { cancel.disabled = true; cancel.style.opacity = '0.6'; }
+        } else {
+          delete btn.dataset.saving;
+          btn.textContent = 'Сохранить';
+          btn.disabled = false;
+          btn.style.opacity = '';
+          if (cancel) { cancel.disabled = false; cancel.style.opacity = ''; }
+        }
       }
 
-      NutriDB.updateUser(targetUserId, { dermatoscopy: list }).then(function() {
+      if (!$('#derm-date').value) { NutriUI.toast('Укажите дату осмотра', 'error'); return; }
+
+      setSaving(true);
+
+      // Дожидаемся завершения всех текущих операций сжатия (Promise.all
+      // по копии, потому что pendingPhotos мутируется финализаторами).
+      Promise.all(pendingPhotos.slice()).then(function() {
+        var base = existing || {};
+        var record = {
+          id: existing ? existing.id : ('d_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7)),
+          zone: $('#derm-zone').value,
+          date: $('#derm-date').value,
+          time: $('#derm-time').value,
+          device: $('#derm-device').value,
+          exam: $('#derm-exam').value,
+          notes: $('#derm-notes').value.trim(),
+          teacherComment: $('#derm-comment').value.trim(),
+          images: images,
+          createdAt: base.createdAt || new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+        var a = $('#derm-acne').value;
+        var g = $('#derm-aging').value;
+        if (a !== '') record.acneIndex = parseFloat(a);
+        if (g !== '') record.agingIndex = parseFloat(g);
+
+        var list = (target.dermatoscopy || []).slice();
+        if (existing) {
+          var idx = list.findIndex(function(r) { return r.id === existing.id; });
+          if (idx >= 0) list[idx] = record; else list.push(record);
+        } else {
+          list.push(record);
+        }
+
+        return NutriDB.updateUser(targetUserId, { dermatoscopy: list });
+      }).then(function() {
         NutriUI.toast('Сохранено', 'success');
         modalHandle.close();
-        // Ре-рендер соответствующей страницы
         if (currentPage === 'student-detail') renderStudentDetailPage();
         else if (currentPage === 'derm') renderDermPage();
       }).catch(function(err) {
-        NutriUI.toast('Не удалось сохранить: ' + err.message, 'error');
+        NutriUI.toast('Не удалось сохранить: ' + (err && err.message || 'ошибка'), 'error');
+        setSaving(false);
       });
     });
   }
