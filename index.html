@@ -56,7 +56,10 @@
   <div class="toast-container"></div>
 
   <!-- Scripts (order matters: dependencies first) -->
-  <script src="js/config.js"></script>
+  <!-- Cache-buster для config.js: GitHub Pages/Fastly держат файл до 10 мин,
+       а от config.js зависит, на какой бэкенд пойдут все запросы. Меняем
+       v=YYYYMMDDNN при переключении бэкенда — браузер тянет свежую версию. -->
+  <script src="js/config.js?v=2026041501"></script>
   <script src="js/api.js"></script>
   <script src="js/storage.js"></script>
   <script src="js/nutrients.js"></script>
