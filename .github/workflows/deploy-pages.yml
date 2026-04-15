@@ -28,13 +28,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Inject Worker URL into config.js
-        if: ${{ vars.WORKER_URL != '' }}
-        run: |
-          escaped='${{ vars.WORKER_URL }}'
-          sed -i "s|WORKER_URL: '[^']*'|WORKER_URL: '${escaped}'|" js/config.js
-          echo "--- js/config.js after injection ---"
-          cat js/config.js
+      # Ранее здесь был шаг «Inject Worker URL into config.js», который
+      # перезаписывал js/config.js значением из repository variable
+      # vars.WORKER_URL. Это удобно, пока бэкенд один. После переезда на
+      # Timeweb URL стал жить прямо в репозитории (см. js/config.js),
+      # а variable-инъекция начала конфликтовать с ручными правками.
+      # Если снова понадобится несколько environments — заведите
+      # отдельные config.*.js и копируйте нужный на build-этапе.
 
       - name: Build site (copy static files)
         run: |
