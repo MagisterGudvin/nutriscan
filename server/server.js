@@ -198,9 +198,9 @@ function isMeaningfulAnalyze(r) {
 function adaptAgentResponse(p) {
   const out = {
     totals: { calories: 0, protein: 0, fat: 0, carbs: 0 },
-    deficits: Array.isArray(p.deficits) ? p.deficits : [],
-    imbalances: Array.isArray(p.imbalances) ? p.imbalances : [],
-    recommendations: Array.isArray(p.recommendations) ? p.recommendations : [],
+    deficits:        sanitizeTextList(p.deficits),
+    imbalances:      sanitizeTextList(p.imbalances),
+    recommendations: sanitizeTextList(p.recommendations),
     sources: []
   };
   if (p.totals && typeof p.totals === 'object') {
@@ -226,7 +226,7 @@ function adaptAgentResponse(p) {
             product: item.product,
             value: `${num(item.calories)} ккал, Б${num(item.protein)} Ж${num(item.fat)} У${num(item.carbs)}`,
             source: sd.source,
-            detail: sd.detail
+            detail: sanitizeText(sd.detail)
           });
         }
       }
@@ -247,10 +247,43 @@ function adaptAgentResponse(p) {
       if (!s || typeof s !== 'object') return s;
       const src = normalizeSourceLabel(s.source || '');
       const sd = splitSourceDetail(src, s.detail);
-      return { ...s, source: sd.source, detail: sd.detail };
+      return { ...s, source: sd.source, detail: sanitizeText(sd.detail) };
     });
   }
   return out;
+}
+
+/* Чистим строки рекомендаций/дефицитов от паразитного слова "аналог"
+   (студент видит фразу типа «аналог: чай зелёный» и пугается, что система
+   не уверена в источнике). Системный промпт это запрещает, но модель иногда
+   не слушается — фильтр-страховка. Заодно выкидываем пустые/мусорные элементы. */
+function sanitizeText(s) {
+  if (s == null) return '';
+  let t = String(s);
+  // "(аналог: …)" / "(аналог …)" — удаляем скобку целиком
+  t = t.replace(/\s*\(\s*аналог[а-яё]*\b[^)]*\)/giu, '');
+  // "[аналог: …]" — то же для квадратных скобок
+  t = t.replace(/\s*\[\s*аналог[а-яё]*\b[^\]]*\]/giu, '');
+  // ", аналог: цикорий" / " — аналог цикорий" — режем
+  // ведущий пунктуатор + слово + двоеточие/тире (если есть).
+  // Жадно не идём — следующее слово оставляем как часть фразы.
+  t = t.replace(/\s*[—–\-,;:]\s*аналог[а-яё]*\b\s*[:—–\-]?\s*/giu, ' ');
+  // Одинокое слово "аналог" в любой форме — выкидываем.
+  // \b ловит только границу слова, "анализ"/"аналитик" не совпадают
+  // (там корень "анал" + другая буква, не "г").
+  t = t.replace(/\bаналог[а-яё]*\b/giu, '');
+  // Хеджи "примерно как", "похоже на" — оставляем смысл, убираем неуверенность
+  t = t.replace(/\b(примерно|приблизительно|похоже)\s+(как|на)\s+/giu, '');
+  // Двойные пробелы / повисшие знаки препинания
+  t = t.replace(/\s{2,}/g, ' ').replace(/\s+([,.;:!?])/g, '$1').trim();
+  t = t.replace(/^[—–\-:;,]\s*/, '');
+  return t;
+}
+function sanitizeTextList(arr) {
+  if (!Array.isArray(arr)) return [];
+  return arr
+    .map(sanitizeText)
+    .filter(s => s && s.length >= 3);
 }
 
 function normalizeSourceLabel(raw) {
@@ -372,9 +405,10 @@ function buildSystemPrompt() {
     '   "хлеб" → "хлеб ржаной формовой", "хлеб пшеничный из муки 1 сорта";',
     '   "чай"  → "чай чёрный байховый", "чай зелёный".',
     '   Для любых коротких бытовых названий пробуй развёрнутые формы.',
-    'C. Если в Скурихине нашёлся точный или близкий аналог — используй ЕГО значения,',
-    '   source="Скурихин", в detail укажи таблицу/страницу. Если это аналог —',
-    '   допиши "(аналог: <название из KB>)".',
+    'C. Если в Скурихине нашёлся точный или близкий по составу продукт — используй',
+    '   ЕГО значения, source="Скурихин", в detail укажи только таблицу/страницу',
+    '   ("табл. 6.6.4, стр. 148"). НЕ пиши слова "аналог", "похоже", "примерно"',
+    '   ни в detail, ни в recommendations — это пугает студента и засоряет отчёт.',
     'D. source="Оценка преподавателя" допустим ТОЛЬКО как последний шанс, когда',
     '   ни одно название не дало результата в KB. Всё равно заполни КБЖУ своими',
     '   лучшими оценками — НЕ ставь нули в макро.',
@@ -392,7 +426,10 @@ function buildSystemPrompt() {
     '',
     'Поле source = ТОЛЬКО название источника:',
     '  "Скурихин" | "База преподавателя" | "Оценка преподавателя".',
-    'Поле detail = ТОЛЬКО локализация: "табл. 6.6.4, стр. 148" / "(аналог: …)".',
+    'Поле detail = ТОЛЬКО локализация: "табл. 6.6.4, стр. 148" / "стандартная порция 200 г".',
+    'СЛОВО "аналог" ЗАПРЕЩЕНО в любом поле ответа (detail, recommendations, deficits,',
+    'imbalances, product). Если ты подобрал близкий продукт — просто используй его',
+    'значения без объяснений, что это было сопоставление.',
     'НЕ дублируй название источника в detail.',
     '',
     '=== РЕКОМЕНДАЦИИ И ДЕФИЦИТЫ (МР 2.3.1.0253-21) ===',
