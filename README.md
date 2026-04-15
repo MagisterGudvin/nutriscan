@@ -1,11 +1,12 @@
 # NutriForce
 
-Веб-приложение для анализа питания студентов. Чистый HTML/CSS/JS без сборки и npm,
-бэкендом служит Cloudflare Worker, который проксирует запросы к Timeweb AI Agent
-и хранит данные в JSON-файлах внутри отдельного GitHub-репозитория.
+Веб-приложение для анализа питания и состояния кожи студентов. Чистый HTML/CSS/JS
+без сборки и npm. Бэкендом служит небольшой Node.js-сервис (`server/`), который
+проксирует запросы к Timeweb AI Agent и хранит данные в JSON-файлах отдельного
+приватного GitHub-репозитория.
 
-**Никакие данные пользователей не хранятся в `localStorage`** — всё лежит в репо
-с данными, фронтенд держит только in-memory кэш и токен текущей сессии в
+Фронт держит **in-memory кэш + localStorage-зеркало** (только для отказоустойчивости
+в РФ-сети — при падении бэкенда даёт вход в read-only режиме). Сессия — в
 `sessionStorage` (per-tab).
 
 ---
@@ -13,31 +14,40 @@
 ## Архитектура
 
 ```
-┌────────────────┐    HTTPS     ┌──────────────────┐    GitHub API   ┌──────────────────┐
-│ GitHub Pages   │ ───────────► │ Cloudflare Worker│ ───────────────►│ data-репозиторий │
-│ (статика SPA)  │              │ (api + storage)  │                 │ users/reports/…  │
-└────────────────┘              └──────────────────┘                 └──────────────────┘
-                                         │
-                                         │  Timeweb AI
-                                         ▼
-                                ┌──────────────────┐
-                                │  AI Agent (LLM)  │
-                                └──────────────────┘
+┌────────────────┐   HTTPS    ┌──────────────────┐   GitHub API   ┌──────────────────┐
+│ Frontend (SPA) │ ─────────► │ Node.js backend  │ ─────────────► │ data-репозиторий │
+│ GH Pages /     │            │ (Timeweb Cloud   │                │ users/reports/…  │
+│ Timeweb Хостинг│            │  Apps, Docker)   │                │                  │
+└────────────────┘            └──────────────────┘                └──────────────────┘
+                                       │
+                                       │  Bearer-токен агента
+                                       ▼
+                              ┌──────────────────┐
+                              │ Timeweb AI Agent │
+                              │ (LLM + Скурихин  │
+                              │  + МР 2.3.1.0253)│
+                              └──────────────────┘
 ```
 
-* **Фронтенд** — этот репозиторий, деплоится на GitHub Pages.
-* **Worker** — каталог `worker/`, деплоится в Cloudflare через wrangler.
+* **Фронтенд** — этот репозиторий, деплоится на GitHub Pages workflow-ом
+  `deploy-pages.yml`.
+* **Бэкенд** — каталог `server/`, разворачивается на Timeweb Cloud Apps через
+  `Dockerfile`. Подробности — `server/README.md`.
 * **Данные** — отдельный приватный GitHub-репозиторий, хранит:
   * `data/users.json`
   * `data/reports.json`
   * `data/products_override.json`
+
+> **История.** До апреля 2026 бэкенд жил на Cloudflare Workers. Из-за троттлинга
+> CF в РФ переехали на Timeweb. Код воркера доступен в истории git до коммита,
+> предшествующего удалению `worker/`.
 
 ---
 
 ## Требования к репозиторию с данными
 
 Создайте отдельный приватный репозиторий, например `your-username/nutri-data`,
-с такой структурой:
+со структурой:
 
 ```
 nutri-data/
@@ -47,76 +57,78 @@ nutri-data/
     └── products_override.json  # []
 ```
 
-Worker сам создаёт/обновляет файлы через GitHub Contents API.
+Сервер сам создаёт/обновляет файлы через GitHub Contents API.
 
 ---
 
 ## Деплой
 
-### 1. Cloudflare Worker
+### 1. Бэкенд — Timeweb Cloud Apps
 
-В Cloudflare Dashboard:
+Подробная пошаговая инструкция: [`server/README.md`](server/README.md).
 
-1. Создайте API Token с правами `Edit Cloudflare Workers`.
-2. Скопируйте Account ID.
+Кратко: Timeweb → Облако → Приложения → «Создать» → тип **Docker** → источник
+**GitHub** → репозиторий `nutriscan`, корневая директория `server`. Задайте
+переменные окружения:
 
-В GitHub-репозитории этого фронтенда добавьте **Secrets** (Settings → Secrets and variables → Actions):
+| Имя                | Назначение                                   |
+|--------------------|----------------------------------------------|
+| `PORT`             | `3000`                                       |
+| `ALLOWED_ORIGIN`   | `https://ваш-фронтенд-домен` (или `*`)       |
+| `TIMEWEB_AGENT_ID` | ID агента Timeweb AI                         |
+| `TIMEWEB_TOKEN`    | Bearer-токен агента                          |
+| `GITHUB_REPO`      | `your-username/nutri-data`                   |
+| `GITHUB_BRANCH`    | `main`                                       |
+| `GITHUB_TOKEN`     | fine-grained PAT, Contents: Read & Write     |
 
-| Имя                  | Назначение                                                    |
-|----------------------|---------------------------------------------------------------|
-| `CLOUDFLARE_API_TOKEN` | API-токен Cloudflare с правами на воркеры                  |
-| `CLOUDFLARE_ACCOUNT_ID`| Account ID из Cloudflare                                   |
-| `GH_DATA_TOKEN`        | Fine-grained PAT с правами `Contents: Read & Write` на data-репо |
-| `TIMEWEB_TOKEN`        | Bearer-токен Timeweb AI Agent                              |
+Timeweb выдаст технический домен (`*.twc1.net`) — привяжите свой (вкладка
+«Домены», Let's Encrypt выдаётся автоматически).
 
-В `worker/wrangler.toml` укажите свой `GITHUB_REPO`.
+### 2. Фронтенд — GitHub Pages
 
-После пуша в `main` workflow `Deploy Cloudflare Worker` сам зальёт воркер
-и пробросит секреты.
+**Settings → Pages** → Source: `GitHub Actions`.
 
-Альтернативно — локально:
+В `js/config.js` укажите URL вашего бэкенда:
 
-```bash
-cd worker
-npx wrangler login
-npx wrangler secret put GITHUB_TOKEN
-npx wrangler secret put TIMEWEB_TOKEN
-npx wrangler deploy
+```js
+window.NUTRI_CONFIG = {
+  WORKER_URL: 'https://api.your-domain.ru'
+};
 ```
 
-После деплоя получите URL вида `https://nutri-worker.your-subdomain.workers.dev`.
+После пуша в `main` workflow `Deploy to GitHub Pages` (`deploy-pages.yml`)
+опубликует сайт.
 
-### 2. GitHub Pages (фронтенд)
+> При смене `WORKER_URL` увеличьте `?v=…` на `<script src="js/config.js?v=…">`
+> в `index.html` — это cache-buster против 10-минутного Fastly-кэша GH Pages.
 
-В **Settings → Pages** включите Source: `GitHub Actions`.
+### 3. Альтернатива: фронтенд на российском хостинге
 
-В **Settings → Secrets and variables → Actions → Variables** добавьте:
-
-| Имя          | Значение                                            |
-|--------------|-----------------------------------------------------|
-| `WORKER_URL` | URL вашего воркера, например `https://nutri-worker.your-subdomain.workers.dev` |
-
-Workflow `Deploy to GitHub Pages` подставит URL в `js/config.js` на сборке.
-
-Альтернативно — отредактируйте `js/config.js` вручную и закоммитьте.
-
-### 3. Готово
-
-После двух workflow'ов фронтенд доступен по адресу
-`https://<user>.github.io/<repo>/` и общается с воркером, который пишет данные
-в data-репозиторий.
+GitHub Pages в РФ нестабилен. Для продакшена рекомендуется перенести статику
+на Timeweb Хостинг / Yandex Object Storage + CDN / VK Cloud Static. Просто
+залейте содержимое этого репозитория (без `server/` и `.github/`) — это
+обычный статический сайт.
 
 ---
 
-## Локальный запуск
+## Локальный запуск фронта
 
 ```powershell
 ./serve.ps1
 ```
 
-Откроется на `http://localhost:8080`. Не забудьте указать рабочий
-`WORKER_URL` в `js/config.js` (или временно поднять воркер локально через
-`npx wrangler dev`).
+Откроется на `http://localhost:8080`. В `js/config.js` укажите URL работающего
+бэкенда (Timeweb или локальный `http://localhost:3000`).
+
+## Локальный запуск бэкенда
+
+```bash
+cd server
+cp .env.example .env   # заполнить TIMEWEB_TOKEN + GITHUB_TOKEN
+npm install
+node --env-file=.env server.js
+# → http://localhost:3000/health
+```
 
 ---
 
