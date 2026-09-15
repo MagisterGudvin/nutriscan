@@ -1,35 +1,61 @@
 /* ============================================
-   NutriForce — DOCX Export (WordprocessingML XML)
+   NutriForce — DOCX Export (Office Open XML)
+   --------------------------------------------
+   Документы собираются как настоящий .docx —
+   ZIP-контейнер с OOXML-частями. Так отчёт
+   одинаково открывается в Word, LibreOffice,
+   Google Docs и на мобильных.
    ============================================ */
 var NutriDocx = (function() {
   'use strict';
 
+  var W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+
+  // Ширина текстового блока на A4 при полях 1134 twip: 11906 - 2*1134
+  var CONTENT_WIDTH = 9638;
+
   function esc(s) {
-    return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    return String(s == null ? '' : s)
+      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '')
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  // Текст с переводами строк превращаем в несколько прогонов с <w:br/>,
+  // иначе Word склеивает всё описание приёма пищи в одну строку.
+  function runText(text) {
+    var parts = String(text == null ? '' : text).split(/\r\n|\r|\n/);
+    return parts.map(function(p) {
+      return '<w:t xml:space="preserve">' + esc(p) + '</w:t>';
+    }).join('<w:br/>');
   }
 
   function color(hex) {
-    return hex.replace('#','');
+    return String(hex || '').replace('#','');
   }
+
+  /* ---- Низкоуровневые блоки OOXML ----
+     Порядок дочерних элементов в rPr/pPr/tcPr/tblPr задан схемой OOXML
+     жёстко: при нарушении Word молча выбрасывает весь блок. */
 
   function para(text, opts) {
     opts = opts || {};
-    var sz = (opts.size || 22);
+
     var rpr = '<w:rPr>';
     rpr += '<w:rFonts w:ascii="Inter" w:hAnsi="Inter" w:cs="Inter"/>';
-    rpr += '<w:sz w:val="' + sz + '"/>';
     if (opts.bold) rpr += '<w:b/>';
-    if (opts.color) rpr += '<w:color w:val="' + color(opts.color) + '"/>';
     if (opts.italic) rpr += '<w:i/>';
+    if (opts.color) rpr += '<w:color w:val="' + color(opts.color) + '"/>';
+    rpr += '<w:sz w:val="' + (opts.size || 22) + '"/>';
+    rpr += '<w:szCs w:val="' + (opts.size || 22) + '"/>';
     rpr += '</w:rPr>';
 
     var ppr = '<w:pPr>';
-    if (opts.align) ppr += '<w:jc w:val="' + opts.align + '"/>';
+    if (opts.shd) ppr += '<w:shd w:val="clear" w:color="auto" w:fill="' + color(opts.shd) + '"/>';
     if (opts.spacing) ppr += '<w:spacing w:after="' + opts.spacing + '"/>';
-    if (opts.shd) ppr += '<w:shd w:val="clear" w:fill="' + color(opts.shd) + '"/>';
+    if (opts.align) ppr += '<w:jc w:val="' + opts.align + '"/>';
     ppr += '</w:pPr>';
 
-    return '<w:p>' + ppr + '<w:r>' + rpr + '<w:t xml:space="preserve">' + esc(text) + '</w:t></w:r></w:p>';
+    return '<w:p>' + ppr + '<w:r>' + rpr + runText(text) + '</w:r></w:p>';
   }
 
   function tableRow(cells, opts) {
@@ -41,8 +67,8 @@ var NutriDocx = (function() {
     cells.forEach(function(cell) {
       var tcPr = '<w:tcPr>';
       tcPr += '<w:tcW w:w="0" w:type="auto"/>';
-      if (cell.shd) tcPr += '<w:shd w:val="clear" w:fill="' + color(cell.shd) + '"/>';
-      tcPr += '<w:tcMar><w:top w:w="60" w:type="dxa"/><w:bottom w:w="60" w:type="dxa"/><w:left w:w="120" w:type="dxa"/><w:right w:w="120" w:type="dxa"/></w:tcMar>';
+      if (cell.shd) tcPr += '<w:shd w:val="clear" w:color="auto" w:fill="' + color(cell.shd) + '"/>';
+      tcPr += '<w:tcMar><w:top w:w="60" w:type="dxa"/><w:left w:w="120" w:type="dxa"/><w:bottom w:w="60" w:type="dxa"/><w:right w:w="120" w:type="dxa"/></w:tcMar>';
       tcPr += '</w:tcPr>';
       row += '<w:tc>' + tcPr + para(cell.text, cell) + '</w:tc>';
     });
@@ -51,6 +77,13 @@ var NutriDocx = (function() {
   }
 
   function table(rows) {
+    if (!rows || !rows.length) return '';
+
+    // w:tblGrid обязателен: без него Word не может разложить таблицу
+    // по колонкам и не показывает её вовсе.
+    var cols = (rows[0].match(/<w:tc>/g) || []).length || 1;
+    var colWidth = Math.floor(CONTENT_WIDTH / cols);
+
     var tbl = '<w:tbl>';
     tbl += '<w:tblPr>';
     tbl += '<w:tblW w:w="5000" w:type="pct"/>';
@@ -61,12 +94,34 @@ var NutriDocx = (function() {
     tbl += '</w:tblBorders>';
     tbl += '<w:tblCellMar><w:top w:w="40" w:type="dxa"/><w:bottom w:w="40" w:type="dxa"/></w:tblCellMar>';
     tbl += '</w:tblPr>';
+    tbl += '<w:tblGrid>';
+    for (var i = 0; i < cols; i++) tbl += '<w:gridCol w:w="' + colWidth + '"/>';
+    tbl += '</w:tblGrid>';
     tbl += rows.join('');
     tbl += '</w:tbl>';
+    // Пустой абзац после таблицы: две таблицы подряд Word сливает в одну.
+    tbl += '<w:p><w:pPr><w:spacing w:after="0"/></w:pPr></w:p>';
     return tbl;
   }
 
   function sexLabel(s) { return s === 'female' ? 'Женский' : 'Мужской'; }
+
+  /* ---- Разрешение норм ----
+     Профиль студента может не содержать norms (старые аккаунты,
+     студент удалил параметры). Нормы при этом всегда сохраняются
+     в самом отчёте — берём их оттуда, иначе весь блок «норма/факт»
+     выпадает из недельного отчёта. */
+  function resolveNorms(student, reports) {
+    var own = student && student.norms;
+    if (own && Object.keys(own).length) return own;
+
+    var list = reports || [];
+    for (var i = list.length - 1; i >= 0; i--) {
+      var n = list[i] && list[i].norms;
+      if (n && Object.keys(n).length) return n;
+    }
+    return null;
+  }
 
   function formatMeals(meals) {
     if (!meals) return [];
@@ -79,6 +134,7 @@ var NutriDocx = (function() {
   }
 
   function renderStudentCard(student) {
+    student = student || {};
     var out = '';
     out += para('Данные студента', { size: 26, bold: true, spacing: 100, color: '#0f172a' });
 
@@ -101,18 +157,21 @@ var NutriDocx = (function() {
       ]));
     });
     out += table(rows);
-    out += para('', { spacing: 80 });
     return out;
   }
 
-  function renderNormsBlock(student) {
-    var n = student.norms || {};
+  function renderNormsBlock(student, norms) {
+    student = student || {};
+    var n = norms || student.norms || {};
     var out = '';
     out += para('Индивидуальные нормы', { size: 26, bold: true, spacing: 100, color: '#0f172a' });
 
     if (n.bmr && n.tdee) {
+      var factor = NutriAnalysis.ACTIVITY_LEVELS[student.activity]
+        ? NutriAnalysis.ACTIVITY_LEVELS[student.activity].factor
+        : '1.55';
       out += para('Базовый метаболизм (BMR, Миффлин–Сан-Жеор): ' + n.bmr + ' ккал', { size: 22, color: '#475569', spacing: 40 });
-      out += para('Суточный расход (TDEE = BMR × ' + (student.activity ? NutriAnalysis.ACTIVITY_LEVELS[student.activity].factor : '1.55') + '): ' + n.tdee + ' ккал', { size: 22, color: '#475569', spacing: 80 });
+      out += para('Суточный расход (TDEE = BMR × ' + factor + '): ' + n.tdee + ' ккал', { size: 22, color: '#475569', spacing: 80 });
     }
 
     var rows = [];
@@ -173,7 +232,6 @@ var NutriDocx = (function() {
     }
 
     out += table(rows);
-    out += para('', { spacing: 100 });
     return out;
   }
 
@@ -231,7 +289,6 @@ var NutriDocx = (function() {
     });
 
     out += table(rows);
-    out += para('', { spacing: 100 });
     return out;
   }
 
@@ -252,7 +309,6 @@ var NutriDocx = (function() {
       ]));
     });
     out += table(rows);
-    out += para('', { spacing: 100 });
     return out;
   }
 
@@ -282,55 +338,60 @@ var NutriDocx = (function() {
     });
 
     out += table(srcRows);
-    out += para('', { spacing: 100 });
+    return out;
+  }
+
+  function signature() {
+    var out = '';
+    out += para('', { spacing: 200 });
+    out += para('___________________________________', { size: 20, color: '#94a3b8', spacing: 40 });
+    out += para('Отчёт сформирован системой NutriForce. Оценка производится на основе формулы Миффлина–Сан-Жеора с учётом пола, возраста, роста, массы тела и уровня физической активности студента.', { size: 18, color: '#94a3b8', italic: true });
     return out;
   }
 
   function generateReport(student, report) {
     var body = '';
+    var norms = resolveNorms(student, [report]);
 
     body += para('NutriForce — Отчёт за день', { size: 36, bold: true, color: '#16a34a', spacing: 100 });
-    body += para(student.name + ' — ' + report.date, { size: 28, bold: true, spacing: 80 });
+    body += para((student.name || '') + ' — ' + report.date, { size: 28, bold: true, spacing: 80 });
     body += para('Дата формирования отчёта: ' + new Date().toISOString().slice(0, 10), { size: 20, color: '#64748b', spacing: 200, italic: true });
 
     // 1. Профиль студента
     body += renderStudentCard(student);
 
     // 2. Индивидуальные нормы с формулами
-    body += renderNormsBlock(student);
+    body += renderNormsBlock(student, norms);
 
     // 3. Приёмы пищи в таблице
     body += renderMealsBlock(report.meals);
 
     // 4. Нутриенты факт vs норма с отклонениями и статусом
-    body += renderNutrientsTable(report.totals, report.norms);
+    body += renderNutrientsTable(report.totals, norms);
 
     // 5. Итоговый статус дня
-    if (report.totals && report.norms) {
-      var status = NutriAnalysis.getDayStatus(report.totals, report.norms);
+    if (report.totals && norms) {
+      var status = NutriAnalysis.getDayStatus(report.totals, norms);
       var statusText = status === 'good' ? 'ДЕНЬ В НОРМЕ' : status === 'warning' ? 'ЕСТЬ ОТКЛОНЕНИЯ' : 'ЗНАЧИТЕЛЬНЫЕ ОТКЛОНЕНИЯ';
       var statusColor = status === 'good' ? '#16a34a' : status === 'warning' ? '#f59e0b' : '#ef4444';
       var statusBg = status === 'good' ? '#F0FDF4' : status === 'warning' ? '#FFFBEB' : '#FEF2F2';
       body += para(statusText, { size: 28, bold: true, spacing: 100, color: statusColor, shd: statusBg, align: 'center' });
-      body += para('', { spacing: 100 });
     }
 
     // 6. Дефициты
     if (report.deficits && report.deficits.length) {
       body += para('Дефициты', { size: 26, bold: true, spacing: 100, color: '#ef4444' });
       report.deficits.forEach(function(d) {
-        body += para('\u26a0 ' + d, { size: 22, color: '#ef4444', spacing: 40 });
+        body += para('⚠ ' + d, { size: 22, color: '#ef4444', spacing: 40 });
       });
-      body += para('', { spacing: 100 });
     }
 
     // 7. Дисбалансы
     if (report.imbalances && report.imbalances.length) {
       body += para('Дисбалансы', { size: 26, bold: true, spacing: 100, color: '#f59e0b' });
       report.imbalances.forEach(function(d) {
-        body += para('\u26a0 ' + d, { size: 22, color: '#f59e0b', spacing: 40 });
+        body += para('⚠ ' + d, { size: 22, color: '#f59e0b', spacing: 40 });
       });
-      body += para('', { spacing: 100 });
     }
 
     // 8. Источники данных — ОБЯЗАТЕЛЬНО подробно
@@ -340,36 +401,34 @@ var NutriDocx = (function() {
     if (report.recommendations && report.recommendations.length) {
       body += para('Рекомендации', { size: 26, bold: true, spacing: 100, color: '#16a34a' });
       report.recommendations.forEach(function(r) {
-        body += para('\u2714 ' + r, { size: 22, color: '#16a34a', spacing: 40, shd: '#F0FDF4' });
+        body += para('✔ ' + r, { size: 22, color: '#16a34a', spacing: 40, shd: '#F0FDF4' });
       });
-      body += para('', { spacing: 100 });
     }
 
     // 10. Комментарий преподавателя
     if (report.teacherComment) {
       body += para('Комментарий преподавателя', { size: 26, bold: true, spacing: 100, color: '#3b82f6' });
       body += para(report.teacherComment, { size: 22, spacing: 40, shd: '#DBEAFE', color: '#1e40af' });
-      body += para('', { spacing: 100 });
     }
 
-    // Подпись
-    body += para('', { spacing: 200 });
-    body += para('___________________________________', { size: 20, color: '#94a3b8', spacing: 40 });
-    body += para('Отчёт сформирован системой NutriForce. Оценка производится на основе формулы Миффлина–Сан-Жеора с учётом пола, возраста, роста, массы тела и уровня физической активности студента.', { size: 18, color: '#94a3b8', italic: true });
+    body += signature();
 
     return wrapDocument(body);
   }
 
   function generateWeekReport(student, reports) {
     var body = '';
+    reports = reports || [];
 
     body += para('NutriForce — Недельный отчёт', { size: 36, bold: true, color: '#16a34a', spacing: 100 });
-    body += para(student.name, { size: 28, bold: true, spacing: 80 });
+    body += para(student.name || '', { size: 28, bold: true, spacing: 80 });
     body += para('Дата формирования отчёта: ' + new Date().toISOString().slice(0, 10), { size: 20, color: '#64748b', spacing: 200, italic: true });
 
     if (reports.length === 0) {
       body += renderStudentCard(student);
+      body += renderNormsBlock(student, resolveNorms(student, reports));
       body += para('Нет данных за выбранный период', { size: 22, spacing: 200, color: '#ef4444' });
+      body += signature();
       return wrapDocument(body);
     }
 
@@ -378,6 +437,8 @@ var NutriDocx = (function() {
       return (a.date || '').localeCompare(b.date || '');
     });
 
+    var norms = resolveNorms(student, sorted);
+
     var dateRange = sorted[0].date + ' — ' + sorted[sorted.length - 1].date;
     body += para('Период: ' + dateRange + ' (' + sorted.length + ' дн.)', { size: 22, spacing: 200, color: '#64748b', bold: true });
 
@@ -385,7 +446,7 @@ var NutriDocx = (function() {
     body += renderStudentCard(student);
 
     // 2. Индивидуальные нормы
-    body += renderNormsBlock(student);
+    body += renderNormsBlock(student, norms);
 
     // 3. Сводная таблица по дням
     body += para('Сводка по дням', { size: 26, bold: true, spacing: 100, color: '#0f172a' });
@@ -404,7 +465,7 @@ var NutriDocx = (function() {
 
     sorted.forEach(function(r) {
       var t = r.totals || {};
-      var n = r.norms || student.norms || {};
+      var n = r.norms || norms || {};
       var cal = Number(t.calories) || 0;
       var p = Number(t.protein) || 0;
       var f = Number(t.fat) || 0;
@@ -441,24 +502,37 @@ var NutriDocx = (function() {
     ]));
 
     body += table(rows);
-    body += para('', { spacing: 100 });
 
     // 4. Итоговая статистика по статусам
     body += para('Распределение дней', { size: 24, bold: true, spacing: 80, color: '#0f172a' });
-    body += para('\u2714 В норме: ' + goodCnt + ' дн.', { size: 22, color: '#16a34a', spacing: 40 });
-    body += para('\u26a0 С отклонениями: ' + warnCnt + ' дн.', { size: 22, color: '#f59e0b', spacing: 40 });
-    body += para('\u2716 Значительные отклонения: ' + badCnt + ' дн.', { size: 22, color: '#ef4444', spacing: 100 });
+    body += para('✔ В норме: ' + goodCnt + ' дн.', { size: 22, color: '#16a34a', spacing: 40 });
+    body += para('⚠ С отклонениями: ' + warnCnt + ' дн.', { size: 22, color: '#f59e0b', spacing: 40 });
+    body += para('✖ Значительные отклонения: ' + badCnt + ' дн.', { size: 22, color: '#ef4444', spacing: 100 });
 
     // 5. Средние vs норма
-    if (student.norms) {
+    if (norms) {
       var avgTotals = {
         calories: Math.round(sumCal / days),
         protein: Math.round(sumP / days),
         fat: Math.round(sumF / days),
         carbs: Math.round(sumC / days)
       };
+      // Микронутриенты тоже усредняем — иначе в таблице «факт vs норма»
+      // у всех витаминов и минералов стоит ноль.
+      if (typeof NutriList !== 'undefined') {
+        NutriList.LIST.forEach(function(meta) {
+          if (meta.group === 'macro' && avgTotals[meta.key] != null) return;
+          var sum = 0, seen = 0;
+          sorted.forEach(function(r) {
+            var v = r.totals && r.totals[meta.key];
+            if (v == null || isNaN(v)) return;
+            sum += Number(v); seen++;
+          });
+          if (seen) avgTotals[meta.key] = Math.round(sum / days * 100) / 100;
+        });
+      }
       body += para('Средние значения за неделю относительно нормы', { size: 24, bold: true, spacing: 80, color: '#0f172a' });
-      body += renderNutrientsTable(avgTotals, student.norms);
+      body += renderNutrientsTable(avgTotals, norms);
     }
 
     // 6. Агрегированные дефициты / дисбалансы
@@ -491,17 +565,15 @@ var NutriDocx = (function() {
     if (allDeficits.length) {
       body += para('Сводные дефициты за неделю', { size: 26, bold: true, spacing: 100, color: '#ef4444' });
       allDeficits.forEach(function(d) {
-        body += para('\u26a0 ' + d, { size: 22, color: '#ef4444', spacing: 40 });
+        body += para('⚠ ' + d, { size: 22, color: '#ef4444', spacing: 40 });
       });
-      body += para('', { spacing: 100 });
     }
 
     if (allImbalances.length) {
       body += para('Сводные дисбалансы за неделю', { size: 26, bold: true, spacing: 100, color: '#f59e0b' });
       allImbalances.forEach(function(i) {
-        body += para('\u26a0 ' + i, { size: 22, color: '#f59e0b', spacing: 40 });
+        body += para('⚠ ' + i, { size: 22, color: '#f59e0b', spacing: 40 });
       });
-      body += para('', { spacing: 100 });
     }
 
     // 7. Источники данных — агрегированные по всей неделе
@@ -511,21 +583,18 @@ var NutriDocx = (function() {
     if (allRecs.length) {
       body += para('Сводные рекомендации', { size: 26, bold: true, spacing: 100, color: '#16a34a' });
       allRecs.forEach(function(r) {
-        body += para('\u2714 ' + r, { size: 22, color: '#16a34a', spacing: 40, shd: '#F0FDF4' });
+        body += para('✔ ' + r, { size: 22, color: '#16a34a', spacing: 40, shd: '#F0FDF4' });
       });
-      body += para('', { spacing: 100 });
     }
 
-    // Подпись
-    body += para('', { spacing: 200 });
-    body += para('___________________________________', { size: 20, color: '#94a3b8', spacing: 40 });
-    body += para('Отчёт сформирован системой NutriForce. Оценка производится на основе формулы Миффлина–Сан-Жеора с учётом пола, возраста, роста, массы тела и уровня физической активности студента.', { size: 18, color: '#94a3b8', italic: true });
+    body += signature();
 
     return wrapDocument(body);
   }
 
   function generateAllStudentsReport(students, allReports) {
     var body = '';
+    allReports = allReports || {};
 
     body += para('NutriForce — Сводный отчёт по группе', { size: 36, bold: true, color: '#16a34a', spacing: 100 });
     body += para('Дата формирования: ' + new Date().toISOString().slice(0, 10), { size: 22, spacing: 100, color: '#64748b', italic: true });
@@ -548,15 +617,15 @@ var NutriDocx = (function() {
 
     students.forEach(function(s, idx) {
       var reps = allReports[s.id] || [];
+      var sNorms = resolveNorms(s, reps) || {};
       var avgCal = 0;
       if (reps.length) {
         var sum = reps.reduce(function(a, r) { return a + ((r.totals && r.totals.calories) || 0); }, 0);
         avgCal = Math.round(sum / reps.length);
       }
-      var normCal = (s.norms && s.norms.calories) || 0;
+      var normCal = sNorms.calories || 0;
       var pct = normCal > 0 ? Math.round(avgCal / normCal * 100) : 0;
       var pctColor = (pct >= 90 && pct <= 110) ? '#16a34a' : (pct >= 75 && pct <= 125) ? '#f59e0b' : '#ef4444';
-      var goal = s.norms ? NutriAnalysis.getGoalLabel(s.norms.goal) : '—';
       rows.push(tableRow([
         { text: String(idx + 1), size: 20, color: '#64748b' },
         { text: s.name, bold: true },
@@ -566,21 +635,21 @@ var NutriDocx = (function() {
         { text: String(avgCal) },
         { text: String(normCal), color: '#16a34a' },
         { text: reps.length ? (pct + '%') : '—', bold: true, color: pctColor },
-        { text: goal, size: 20 }
+        { text: NutriAnalysis.getGoalLabel(sNorms.goal), size: 20 }
       ]));
     });
     body += table(rows);
-    body += para('', { spacing: 200 });
 
     // 2. Подробный блок по каждому студенту
     students.forEach(function(s, idx) {
       var reps = (allReports[s.id] || []).slice().sort(function(a, b) {
-        return (b.date || '').localeCompare(a.date || '');
+        return (a.date || '').localeCompare(b.date || '');
       });
+      var sNorms = resolveNorms(s, reps);
 
       body += para('Студент ' + (idx + 1) + '. ' + s.name, { size: 28, bold: true, color: '#16a34a', spacing: 100 });
       body += renderStudentCard(s);
-      body += renderNormsBlock(s);
+      body += renderNormsBlock(s, sNorms);
 
       if (!reps.length) {
         body += para('Нет отчётов по данному студенту.', { size: 22, color: '#64748b', italic: true, spacing: 200 });
@@ -626,19 +695,19 @@ var NutriDocx = (function() {
       };
 
       body += para('Средние значения за ' + days + ' отчёт(ов)', { size: 24, bold: true, spacing: 80, color: '#0f172a' });
-      if (s.norms) body += renderNutrientsTable(avgTotals, s.norms);
+      body += renderNutrientsTable(avgTotals, sNorms);
 
       if (allDeficits.length) {
         body += para('Дефициты', { size: 22, bold: true, spacing: 60, color: '#ef4444' });
         allDeficits.forEach(function(d) {
-          body += para('\u26a0 ' + d, { size: 20, color: '#ef4444', spacing: 40 });
+          body += para('⚠ ' + d, { size: 20, color: '#ef4444', spacing: 40 });
         });
       }
 
       if (allImbalances.length) {
         body += para('Дисбалансы', { size: 22, bold: true, spacing: 60, color: '#f59e0b' });
         allImbalances.forEach(function(i) {
-          body += para('\u26a0 ' + i, { size: 20, color: '#f59e0b', spacing: 40 });
+          body += para('⚠ ' + i, { size: 20, color: '#f59e0b', spacing: 40 });
         });
       }
 
@@ -647,43 +716,186 @@ var NutriDocx = (function() {
       if (allRecs.length) {
         body += para('Рекомендации', { size: 22, bold: true, spacing: 60, color: '#16a34a' });
         allRecs.forEach(function(r) {
-          body += para('\u2714 ' + r, { size: 20, color: '#16a34a', spacing: 40, shd: '#F0FDF4' });
+          body += para('✔ ' + r, { size: 20, color: '#16a34a', spacing: 40, shd: '#F0FDF4' });
         });
       }
 
-      body += para('', { spacing: 200 });
       body += para('———————————————————————————', { size: 18, color: '#cbd5e1', align: 'center', spacing: 200 });
     });
 
-    // Подпись
-    body += para('', { spacing: 200 });
-    body += para('___________________________________', { size: 20, color: '#94a3b8', spacing: 40 });
-    body += para('Отчёт сформирован системой NutriForce. Оценка производится на основе формулы Миффлина–Сан-Жеора с учётом пола, возраста, роста, массы тела и уровня физической активности студента.', { size: 18, color: '#94a3b8', italic: true });
+    body += signature();
 
     return wrapDocument(body);
   }
 
   function wrapDocument(bodyContent) {
     var xml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
-    xml += '<?mso-application progid="Word.Document"?>';
-    xml += '<w:wordDocument xmlns:w="http://schemas.microsoft.com/office/word/2003/wordml" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">';
+    xml += '<w:document xmlns:w="' + W_NS + '">';
     xml += '<w:body>';
+    xml += bodyContent;
+    // sectPr закрывает секцию и по схеме обязан идти последним в w:body.
     xml += '<w:sectPr>';
     xml += '<w:pgSz w:w="11906" w:h="16838"/>';
     xml += '<w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1134" w:header="709" w:footer="709"/>';
     xml += '</w:sectPr>';
-    xml += bodyContent;
     xml += '</w:body>';
-    xml += '</w:wordDocument>';
+    xml += '</w:document>';
     return xml;
   }
 
-  function download(xml, filename) {
-    var blob = new Blob([xml], { type: 'application/msword' });
+  /* ============================================
+     Упаковка .docx (ZIP, метод store)
+     ============================================ */
+
+  var CONTENT_TYPES =
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+    '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+    '<Default Extension="xml" ContentType="application/xml"/>' +
+    '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>' +
+    '<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>' +
+    '</Types>';
+
+  var ROOT_RELS =
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+    '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>' +
+    '</Relationships>';
+
+  var DOC_RELS =
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+    '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>' +
+    '</Relationships>';
+
+  var STYLES =
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<w:styles xmlns:w="' + W_NS + '">' +
+    '<w:docDefaults>' +
+    '<w:rPrDefault><w:rPr>' +
+    '<w:rFonts w:ascii="Inter" w:hAnsi="Inter" w:cs="Inter"/>' +
+    '<w:sz w:val="22"/><w:szCs w:val="22"/>' +
+    '</w:rPr></w:rPrDefault>' +
+    '<w:pPrDefault><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr></w:pPrDefault>' +
+    '</w:docDefaults>' +
+    '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/></w:style>' +
+    '</w:styles>';
+
+  var crcTable = null;
+  function makeCrcTable() {
+    var t = new Uint32Array(256);
+    for (var n = 0; n < 256; n++) {
+      var c = n;
+      for (var k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+      t[n] = c >>> 0;
+    }
+    return t;
+  }
+
+  function crc32(bytes) {
+    if (!crcTable) crcTable = makeCrcTable();
+    var crc = 0xFFFFFFFF;
+    for (var i = 0; i < bytes.length; i++) {
+      crc = (crc >>> 8) ^ crcTable[(crc ^ bytes[i]) & 0xFF];
+    }
+    return (crc ^ 0xFFFFFFFF) >>> 0;
+  }
+
+  function utf8(str) {
+    if (typeof TextEncoder !== 'undefined') return new TextEncoder().encode(str);
+    // Фолбэк для очень старых движков
+    var esc = unescape(encodeURIComponent(str));
+    var out = new Uint8Array(esc.length);
+    for (var i = 0; i < esc.length; i++) out[i] = esc.charCodeAt(i);
+    return out;
+  }
+
+  function zip(entries) {
+    var parts = [];
+    var central = [];
+    var offset = 0;
+
+    entries.forEach(function(entry) {
+      var nameBytes = utf8(entry.name);
+      var data = utf8(entry.content);
+      var sum = crc32(data);
+
+      var local = new Uint8Array(30 + nameBytes.length);
+      var lv = new DataView(local.buffer);
+      lv.setUint32(0, 0x04034b50, true);
+      lv.setUint16(4, 20, true);      // версия для распаковки
+      lv.setUint16(6, 0x0800, true);  // имена в UTF-8
+      lv.setUint16(8, 0, true);       // без сжатия (store)
+      lv.setUint16(10, 0, true);      // время
+      lv.setUint16(12, 0x0021, true); // дата (1980-01-01)
+      lv.setUint32(14, sum, true);
+      lv.setUint32(18, data.length, true);
+      lv.setUint32(22, data.length, true);
+      lv.setUint16(26, nameBytes.length, true);
+      lv.setUint16(28, 0, true);
+      local.set(nameBytes, 30);
+
+      var dir = new Uint8Array(46 + nameBytes.length);
+      var dv = new DataView(dir.buffer);
+      dv.setUint32(0, 0x02014b50, true);
+      dv.setUint16(4, 20, true);
+      dv.setUint16(6, 20, true);
+      dv.setUint16(8, 0x0800, true);
+      dv.setUint16(10, 0, true);
+      dv.setUint16(12, 0, true);
+      dv.setUint16(14, 0x0021, true);
+      dv.setUint32(16, sum, true);
+      dv.setUint32(20, data.length, true);
+      dv.setUint32(24, data.length, true);
+      dv.setUint16(28, nameBytes.length, true);
+      dv.setUint32(42, offset, true);
+      dir.set(nameBytes, 46);
+
+      parts.push(local, data);
+      central.push(dir);
+      offset += local.length + data.length;
+    });
+
+    var centralSize = central.reduce(function(a, c) { return a + c.length; }, 0);
+
+    var end = new Uint8Array(22);
+    var ev = new DataView(end.buffer);
+    ev.setUint32(0, 0x06054b50, true);
+    ev.setUint16(8, entries.length, true);
+    ev.setUint16(10, entries.length, true);
+    ev.setUint32(12, centralSize, true);
+    ev.setUint32(16, offset, true);
+
+    var total = offset + centralSize + end.length;
+    var out = new Uint8Array(total);
+    var pos = 0;
+    parts.concat(central).concat([end]).forEach(function(chunk) {
+      out.set(chunk, pos);
+      pos += chunk.length;
+    });
+    return out;
+  }
+
+  function packageDocx(documentXml) {
+    return zip([
+      { name: '[Content_Types].xml', content: CONTENT_TYPES },
+      { name: '_rels/.rels', content: ROOT_RELS },
+      { name: 'word/document.xml', content: documentXml },
+      { name: 'word/styles.xml', content: STYLES },
+      { name: 'word/_rels/document.xml.rels', content: DOC_RELS }
+    ]);
+  }
+
+  function download(documentXml, filename) {
+    var name = String(filename || 'report').replace(/\.docx?$/i, '') + '.docx';
+    var bytes = packageDocx(documentXml);
+    var blob = new Blob([bytes], {
+      type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    });
     var url = URL.createObjectURL(blob);
     var a = document.createElement('a');
     a.href = url;
-    a.download = filename || 'report.doc';
+    a.download = name;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -694,6 +906,7 @@ var NutriDocx = (function() {
     generateReport: generateReport,
     generateWeekReport: generateWeekReport,
     generateAllStudentsReport: generateAllStudentsReport,
+    packageDocx: packageDocx,
     download: download
   };
 })();
