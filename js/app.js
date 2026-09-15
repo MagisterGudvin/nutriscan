@@ -2138,7 +2138,7 @@ var NutriApp = (function() {
         var report = reports.find(function(r) { return r.date === date; });
         if (report) {
           var xml = NutriDocx.generateReport(student, report);
-          NutriDocx.download(xml, 'report_' + student.login + '_' + date + '.doc');
+          NutriDocx.download(xml, 'report_' + student.login + '_' + date + '.docx');
           UI.toast('Отчёт скачан', 'success');
         }
       } else if (btn.dataset.action === 'del-report') {
@@ -2366,7 +2366,7 @@ var NutriApp = (function() {
         '</select>' +
       '</div>' +
 
-      '<button class="btn btn--primary btn--lg" id="btn-export">\ud83d\udce4 Скачать .doc</button>' +
+      '<button class="btn btn--primary btn--lg" id="btn-export">\ud83d\udce4 Скачать .docx</button>' +
     '</div>';
 
     $('#page-export').innerHTML = html;
@@ -2378,7 +2378,7 @@ var NutriApp = (function() {
       if (studentId === 'all') {
         var allReports = NutriDB.getReports();
         var xml = NutriDocx.generateAllStudentsReport(students, allReports);
-        NutriDocx.download(xml, 'report_all_students.doc');
+        NutriDocx.download(xml, 'report_all_students.docx');
       } else {
         var student = NutriDB.findUserById(studentId);
         if (!student) { UI.toast('Студент не найден', 'error'); return; }
@@ -2389,15 +2389,15 @@ var NutriApp = (function() {
           var r = reports.find(function(rep) { return rep.date === today; });
           if (!r) { UI.toast('Нет отчёта за сегодня', 'warning'); return; }
           var xml2 = NutriDocx.generateReport(student, r);
-          NutriDocx.download(xml2, 'report_' + student.login + '_' + today + '.doc');
+          NutriDocx.download(xml2, 'report_' + student.login + '_' + today + '.docx');
         } else if (period === 'week') {
           var weekDates = UI.getWeekDates(UI.todayStr());
           var weekReps = reports.filter(function(r) { return weekDates.indexOf(r.date) !== -1; });
           var xml3 = NutriDocx.generateWeekReport(student, weekReps);
-          NutriDocx.download(xml3, 'report_' + student.login + '_week.doc');
+          NutriDocx.download(xml3, 'report_' + student.login + '_week.docx');
         } else {
           var xml4 = NutriDocx.generateWeekReport(student, reports);
-          NutriDocx.download(xml4, 'report_' + student.login + '_all.doc');
+          NutriDocx.download(xml4, 'report_' + student.login + '_all.docx');
         }
       }
 
@@ -2516,7 +2516,7 @@ var NutriApp = (function() {
     }
 
     var xml = NutriDocx.generateWeekReport(user, weekReps);
-    NutriDocx.download(xml, 'report_' + user.login + '_week.doc');
+    NutriDocx.download(xml, 'report_' + user.login + '_week.docx');
     UI.toast('Отчёт скачан', 'success');
   }
 
@@ -2527,7 +2527,7 @@ var NutriApp = (function() {
     var weekDates = UI.getWeekDates(UI.todayStr());
     var weekReps = reports.filter(function(r) { return weekDates.indexOf(r.date) !== -1; });
     var xml = NutriDocx.generateWeekReport(student, weekReps.length ? weekReps : reports);
-    NutriDocx.download(xml, 'report_' + student.login + '_week.doc');
+    NutriDocx.download(xml, 'report_' + student.login + '_week.docx');
     UI.toast('Отчёт скачан', 'success');
   }
 
