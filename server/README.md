@@ -1,4 +1,4 @@
-# NutriForce Server (Node.js)
+# NutriScan Server (Node.js)
 
 Замена Cloudflare Worker'у на российском хостинге. Логика 1-в-1 с `worker/worker.js`.
 
